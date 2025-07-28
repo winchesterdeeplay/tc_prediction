@@ -1,0 +1,17 @@
+[project]
+name = "tc"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "catboost>=1.2.8",
+    "folium>=0.20.0",
+    "ipykernel>=6.29.5",
+    "jupytext>=1.17.2",
+    "matplotlib>=3.10.3",
+    "pandas>=2.3.1",
+    "scikit-learn>=1.7.1",
+    "seaborn>=0.13.2",
+    "tqdm>=4.67.1",
+]
