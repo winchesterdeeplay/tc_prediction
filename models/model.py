@@ -15,8 +15,7 @@ from core.features import FeatureConfig
 from .losses import (CombinedCycloneLoss, HaversineLoss,
                      HorizonAwareCombinedCycloneLoss,
                      HorizonAwareHaversineLoss, HorizonAwareNLLGaussianLoss,
-                     HorizonAwareSectorLoss, ImprovedHorizonAwareSectorLoss,
-                     ImprovedSectorLoss, NLLGaussianLoss, SectorLoss)
+                     HorizonAwareSectorLoss, NLLGaussianLoss, SectorLoss)
 
 
 class LearnableHorizonNorm(nn.Module):
@@ -441,19 +440,15 @@ class LightningCycloneModel(pl.LightningModule):
         # Resolve loss function
         if loss_fn is None:
             # По умолчанию используем улучшенную horizon-aware loss для лучшего обучения
-            self.criterion: nn.Module = ImprovedHorizonAwareSectorLoss()
+            self.criterion: nn.Module = SectorLoss()
         elif isinstance(loss_fn, str):
             loss_name = loss_fn.lower()
             if loss_name in {"mse", "mseloss"}:
                 self.criterion = nn.MSELoss()
             elif loss_name in {"sector", "sectorloss"}:
                 self.criterion = SectorLoss()
-            elif loss_name in {"improved_sector", "improvedsectorloss"}:
-                self.criterion = ImprovedSectorLoss()
             elif loss_name in {"horizon_sector", "horizon_aware_sector", "horizonsectorloss"}:
                 self.criterion = HorizonAwareSectorLoss()
-            elif loss_name in {"improved_horizon_sector", "improved_horizon_aware_sector", "improvedhorizonsectorloss"}:
-                self.criterion = ImprovedHorizonAwareSectorLoss()
             elif loss_name in {"nll", "gaussian", "negloglik", "nllgaussian"}:
                 self.criterion = NLLGaussianLoss()
             elif loss_name in {"horizon_nll", "horizon_aware_nll", "horizonnllgaussianloss"}:
@@ -485,12 +480,10 @@ class LightningCycloneModel(pl.LightningModule):
             self.criterion,
             (
                 SectorLoss,
-                ImprovedSectorLoss,
                 NLLGaussianLoss,
                 HaversineLoss,
                 CombinedCycloneLoss,
                 HorizonAwareSectorLoss,
-                ImprovedHorizonAwareSectorLoss,
                 HorizonAwareNLLGaussianLoss,
                 HorizonAwareHaversineLoss,
                 HorizonAwareCombinedCycloneLoss,

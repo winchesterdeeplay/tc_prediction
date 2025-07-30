@@ -63,8 +63,6 @@ class ONNXInferencePipeline:
 
         if isinstance(sequence_config, dict):
             seq_config = SequenceConfig(**sequence_config)
-        else:
-            seq_config = sequence_config
             
         self.data_processor = InferenceDataProcessor(
             sequence_config=seq_config,
