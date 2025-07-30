@@ -102,28 +102,6 @@ curl -X POST http://localhost:8000/predict \
     {
       "intl_id": "2023001",
       "storm_name": "TEST_STORM",
-      "analysis_time": "2023-01-01T12:00:00",
-      "lat_deg": 15.5,
-      "lon_deg": 120.3,
-      "dlat_pred": 0.5,
-      "dlon_pred": -1.2,
-      "lat_pred": 16.0,
-      "lon_pred": 119.1
-    },
-    {
-      "intl_id": "2023001",
-      "storm_name": "TEST_STORM",
-      "analysis_time": "2023-01-01T18:00:00",
-      "lat_deg": 16.2,
-      "lon_deg": 119.8,
-      "dlat_pred": 0.3,
-      "dlon_pred": -0.9,
-      "lat_pred": 16.5,
-      "lon_pred": 118.9
-    },
-    {
-      "intl_id": "2023001",
-      "storm_name": "TEST_STORM",
       "analysis_time": "2023-01-02T00:00:00",
       "lat_deg": 16.8,
       "lon_deg": 119.2,
@@ -134,7 +112,7 @@ curl -X POST http://localhost:8000/predict \
     }
   ],
   "horizon_hours": 24,
-  "total_predictions": 3,
+  "total_predictions": 1,
   "processing_time_ms": 78.4
 }
 ```

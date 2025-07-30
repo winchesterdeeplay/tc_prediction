@@ -38,7 +38,7 @@ class InferenceDataProcessor(BaseDataProcessor):
         """
         super().__init__(sequence_config, validate_data)
 
-    def build_dataset(self, df: pd.DataFrame) -> ProcessedDataset:
+    def build_dataset(self, df: pd.DataFrame, horizon_hours: int) -> ProcessedDataset:
         """
         Строит датасет для инференса.
 
@@ -46,15 +46,17 @@ class InferenceDataProcessor(BaseDataProcessor):
         ----------
         df : pd.DataFrame
             Входной датафрейм
+        horizon_hours : int
+            Горизонт прогноза в часах
 
         Returns
         -------
         ProcessedDataset
             Датасет для инференса
         """
-        return self._build_dataset(df, horizon_hours=24)
+        return self._build_dataset(df, horizon_hours=horizon_hours)
 
-    def _build_dataset(self, df: pd.DataFrame, horizon_hours: int = 24) -> ProcessedDataset:
+    def _build_dataset(self, df: pd.DataFrame, horizon_hours: int) -> ProcessedDataset:
         """
         Строит датасет для инференса.
 

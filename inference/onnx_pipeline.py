@@ -63,6 +63,8 @@ class ONNXInferencePipeline:
 
         if isinstance(sequence_config, dict):
             seq_config = SequenceConfig(**sequence_config)
+        elif sequence_config is None:
+            seq_config = None
             
         self.data_processor = InferenceDataProcessor(
             sequence_config=seq_config,
@@ -102,13 +104,8 @@ class ONNXInferencePipeline:
         pd.DataFrame
             DataFrame с предсказаниями (dlat, dlon) и исходными координатами
         """
-        # Проверяем, что горизонт поддерживается (стандартные горизонты)
-        supported_horizons = [6, 12, 24, 48]
-        if horizon_hours not in supported_horizons:
-            raise ValueError(f"Horizon {horizon_hours} not supported. Supported horizons: {supported_horizons}")
-
         # Создаем датасет для инференса
-        inference_dataset = self.data_processor.build_dataset(df)
+        inference_dataset = self.data_processor.build_dataset(df, horizon_hours=horizon_hours)
 
         # Делаем предсказания через ONNX
         predictions = self._predict_with_onnx(inference_dataset.X, batch_size=batch_size)
@@ -118,8 +115,6 @@ class ONNXInferencePipeline:
         result_df["dlat_pred"] = predictions[:, 0]
         result_df["dlon_pred"] = predictions[:, 1]
 
-        # Исходные координаты уже есть в result_df благодаря улучшенному DataProcessor
-        # Проверяем их наличие
         if "lat_deg" not in result_df.columns or "lon_deg" not in result_df.columns:
             raise ValueError("DataProcessor должен возвращать lat_deg и lon_deg в inference_dataset")
 

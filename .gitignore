@@ -14,3 +14,4 @@ old_notebooks/
 lightning_logs/
 *.pkl
 api.log
+app.log
