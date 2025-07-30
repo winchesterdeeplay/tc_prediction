@@ -1,5 +1,14 @@
 # 🌊 Cyclone Trajectory Prediction
 
+
+Pipeline обучения и текущие метрики: [train.ipynb](/train.ipynb)
+
+Подсчет и registry фичей: [core/features.py](/core/features.py)
+
+Inference подробности: [inference](/inference/)
+
+API README: [api](/api/README.md)
+
 ## 🏗️ Архитектура модели
 
 
