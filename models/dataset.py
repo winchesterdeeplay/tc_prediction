@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -11,7 +11,7 @@ class CycloneDataset(Dataset):
 
     Параметры:
     ----------
-    sequences : List[np.ndarray]
+    sequences : list[np.ndarray]
         Список последовательностей переменной длины (только последовательностные фичи)
     static_features : np.ndarray
         Статические фичи для каждого семпла
@@ -23,11 +23,11 @@ class CycloneDataset(Dataset):
 
     def __init__(
         self,
-        sequences: List[np.ndarray],
+        sequences: list[np.ndarray],
         static_features: np.ndarray,
         y: np.ndarray,
         horizon_hours: np.ndarray,
-        sample_weight: Optional[np.ndarray] = None,
+        sample_weight: np.ndarray | None = None,
         shuffle_dataset: bool = False,
     ):
         """
@@ -35,7 +35,7 @@ class CycloneDataset(Dataset):
 
         Параметры:
         ----------
-        sequences : List[np.ndarray]
+        sequences : list[np.ndarray]
             Список последовательностей переменной длины
         static_features : np.ndarray
             Статические фичи [n_samples, n_static_features]
@@ -62,7 +62,7 @@ class CycloneDataset(Dataset):
         if shuffle_dataset:
             self._shuffle_dataset()
 
-    def _shuffle_dataset(self):
+    def _shuffle_dataset(self) -> None:
         """Перемешивает весь датасет."""
         indices = torch.randperm(len(self.sequences))
         self.sequences = [self.sequences[i] for i in indices]
@@ -98,7 +98,7 @@ class CycloneDataset(Dataset):
         )
 
 
-def collate_variable_length(batch, shuffle_sequences: bool = False, shuffle_batch: bool = False) -> tuple:
+def collate_variable_length(batch: Any, shuffle_sequences: bool = False, shuffle_batch: bool = False) -> tuple:
     """
     Collate функция для батчей с переменной длиной последовательностей.
     Выполняет динамический паддинг до максимальной длины в батче.
@@ -163,9 +163,9 @@ def collate_variable_length(batch, shuffle_sequences: bool = False, shuffle_batc
         sequence_lengths[i] = seq_len
 
     # Конвертируем остальные данные в тензоры
-    static_features = torch.stack(static_features)
-    targets = torch.stack(targets)
-    weights = torch.stack(weights)
-    horizon_hours = torch.stack(horizon_hours)
+    static_features_tensor = torch.stack(static_features)
+    targets_tensor = torch.stack(targets)
+    weights_tensor = torch.stack(weights)
+    horizon_hours_tensor = torch.stack(horizon_hours)
 
-    return padded_sequences, static_features, targets, weights, horizon_hours, sequence_lengths
+    return padded_sequences, static_features_tensor, targets_tensor, weights_tensor, horizon_hours_tensor, sequence_lengths

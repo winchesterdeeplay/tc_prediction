@@ -162,7 +162,7 @@ class CycloneDataModule(pl.LightningDataModule):
             static_features_train,
             self.y_train.values,
             horizon_hours_train,
-            self.sample_weight,
+            np.array(self.sample_weight) if self.sample_weight is not None else None,
             shuffle_dataset=self.shuffle_dataset,
         )
         self.val_dataset = CycloneDataset(
@@ -250,7 +250,7 @@ class CycloneDataModule(pl.LightningDataModule):
         # Применяем dropout к некоторым временным шагам
         if self.dropout_rate > 0:
             mask = np.random.random(sequence.shape[0]) > self.dropout_rate
-            if mask.sum() > 1:  # Оставляем минимум 1 шаг
+            if np.sum(mask) > 1:  # Оставляем минимум 1 шаг
                 sequence = sequence[mask]
 
         return sequence

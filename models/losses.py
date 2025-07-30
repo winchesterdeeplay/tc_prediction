@@ -21,7 +21,7 @@ class HorizonAwareLoss(Module):
         Обучаемый слой нормализации
     """
 
-    def __init__(self, normalize_by_horizon: bool = True, norm_alpha_init: float = 0.3, weight_beta: float = 0.7):
+    def __init__(self, normalize_by_horizon: bool = True, norm_alpha_init: float = 0.3, weight_beta: float = 0.7) -> None:
         super().__init__()
         self.normalize_by_horizon = normalize_by_horizon
         self.weight_beta = weight_beta
@@ -48,8 +48,8 @@ class HorizonAwareLoss(Module):
         """
         if not self.normalize_by_horizon:
             return loss
-
-        return self.learnable_norm(loss, horizon_hours)
+        result: Tensor = self.learnable_norm(loss, horizon_hours)
+        return result
 
     def _compute_horizon_weights(self, horizon_hours: Tensor) -> Tensor:
         """
@@ -66,7 +66,8 @@ class HorizonAwareLoss(Module):
             Веса для каждого сэмпла
         """
         weights = torch.pow(horizon_hours, self.weight_beta)
-        return weights / weights.mean()
+        result: Tensor = weights / weights.mean()   
+        return result
 
 
 class HaversineDistanceMixin:
@@ -140,7 +141,8 @@ class DirectionalLossMixin:
         dot = (preds * target).sum(dim=1)
         norm_prod = torch.norm(preds, dim=1) * torch.norm(target, dim=1) + 1e-6
         cos_theta = dot / norm_prod
-        return sector_weight * 0.5 * (1.0 - cos_theta)
+        result: Tensor = sector_weight * 0.5 * (1.0 - cos_theta)
+        return result
 
 
 class SpeedLossMixin:
@@ -266,7 +268,8 @@ class SectorLoss(Module, HaversineDistanceMixin, DirectionalLossMixin):
         if sample_weight is not None:
             weight = weight * sample_weight
 
-        return (weight * base_loss).mean()
+        result: Tensor = (weight * base_loss).mean()
+        return result
 
 
 class HorizonAwareSectorLoss(HorizonAwareLoss, HaversineDistanceMixin, DirectionalLossMixin):
@@ -367,7 +370,8 @@ class HorizonAwareSectorLoss(HorizonAwareLoss, HaversineDistanceMixin, Direction
         if sample_weight is not None:
             weight = weight * sample_weight
 
-        return (weight * base_loss).mean()
+        result: Tensor = (weight * base_loss).mean()
+        return result
 
 
 class NLLGaussianLoss(Module):
@@ -404,7 +408,8 @@ class NLLGaussianLoss(Module):
         nll = nll.sum(dim=1)  # sum over lat/lon
         if sample_weight is not None:
             nll = nll * sample_weight
-        return nll.mean()
+        result: Tensor = nll.mean()
+        return result
 
 
 class HorizonAwareNLLGaussianLoss(HorizonAwareLoss):
@@ -456,7 +461,8 @@ class HorizonAwareNLLGaussianLoss(HorizonAwareLoss):
         if sample_weight is not None:
             horizon_weights = horizon_weights * sample_weight
 
-        return (horizon_weights * normalized_nll).mean()
+        result: Tensor = (horizon_weights * normalized_nll).mean()
+        return result
 
 
 class HaversineLoss(Module, HaversineDistanceMixin):
@@ -671,7 +677,7 @@ class CombinedCycloneLoss(Module, HaversineDistanceMixin, DirectionalLossMixin, 
             speed_loss = speed_penalty.mean()
 
         # Комбинируем компоненты
-        total_loss = (
+        total_loss: Tensor = (
             self.haversine_weight * haversine_loss
             + self.direction_weight * direction_loss
             + self.speed_weight * speed_loss
@@ -786,7 +792,7 @@ class HorizonAwareCombinedCycloneLoss(HorizonAwareLoss, HaversineDistanceMixin, 
         speed_loss = normalized_speed_penalty.mean()
 
         # Комбинируем компоненты
-        total_loss = (
+        total_loss: Tensor = (
             self.haversine_weight * haversine_loss
             + self.direction_weight * direction_loss
             + self.speed_weight * speed_loss
@@ -879,7 +885,8 @@ class ImprovedSectorLoss(Module, HaversineDistanceMixin, DirectionalLossMixin):
         # Применяем alpha weighting
         alpha_weights = self.focal_alpha * (normalized_distances > 0.5).float() + (1 - self.focal_alpha)
 
-        return focal_weights * alpha_weights
+        result: Tensor = focal_weights * alpha_weights
+        return result
 
     def forward(self, preds: Tensor, target: Tensor, sample_weight: Tensor | None = None) -> Tensor:
         """
@@ -921,7 +928,8 @@ class ImprovedSectorLoss(Module, HaversineDistanceMixin, DirectionalLossMixin):
         if sample_weight is not None:
             combined_loss = combined_loss * sample_weight
 
-        return combined_loss.mean()
+        result: Tensor = combined_loss.mean()
+        return result
 
 
 class ImprovedHorizonAwareSectorLoss(HorizonAwareLoss, HaversineDistanceMixin, DirectionalLossMixin):
@@ -1011,7 +1019,8 @@ class ImprovedHorizonAwareSectorLoss(HorizonAwareLoss, HaversineDistanceMixin, D
         # Применяем alpha weighting
         alpha_weights = self.focal_alpha * (normalized_distances > 0.5).float() + (1 - self.focal_alpha)
 
-        return focal_weights * alpha_weights
+        result: Tensor = focal_weights * alpha_weights
+        return result
 
     def forward(
         self, preds: Tensor, target: Tensor, horizon_hours: Tensor, sample_weight: Tensor | None = None

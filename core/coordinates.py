@@ -54,7 +54,8 @@ class CoordinateProcessor:
         dlon = lon2 - lon1
         a = np.sin(dlat / 2.0) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2.0) ** 2
         c = 2 * np.arcsin(np.sqrt(a))
-        return CoordinateProcessor.EARTH_RADIUS_KM * c
+        result: np.ndarray | float = CoordinateProcessor.EARTH_RADIUS_KM * c
+        return result
 
     @staticmethod
     def compute_velocity(
@@ -63,7 +64,7 @@ class CoordinateProcessor:
         lats_curr: np.ndarray,
         lons_curr: np.ndarray,
         time_diffs_hours: np.ndarray,
-    ) -> np.ndarray:
+    ) -> np.ndarray | float:
         """
         Вычисляет скорость движения циклона в км/ч между двумя точками.
 
@@ -110,12 +111,13 @@ class CoordinateProcessor:
         # Избегаем деления на ноль
         safe_time_diffs = np.where(time_diffs_hours == 0, 1.0, time_diffs_hours)
 
-        return distances_km / safe_time_diffs
+        result: np.ndarray | float = distances_km / safe_time_diffs
+        return result
 
     @staticmethod
     def compute_bearing(
         lats_prev: np.ndarray, lons_prev: np.ndarray, lats_curr: np.ndarray, lons_curr: np.ndarray
-    ) -> np.ndarray:
+    ) -> np.ndarray | float:
         """
         Вычисляет направление движения циклона в градусах между двумя точками.
 
@@ -158,12 +160,13 @@ class CoordinateProcessor:
 
         # Конвертируем в градусы и нормализуем к диапазону [0, 360)
         bearings_deg = np.degrees(bearings_rad)
-        return (bearings_deg + 360) % 360
+        result: np.ndarray | float = (bearings_deg + 360) % 360
+        return result
 
     @staticmethod
     def compute_pressure_change(
         pressures_prev: np.ndarray, pressures_curr: np.ndarray, time_diffs_hours: np.ndarray
-    ) -> np.ndarray:
+    ) -> np.ndarray | float:
         """
         Вычисляет изменение давления в гПа/ч между двумя точками.
 
@@ -194,10 +197,11 @@ class CoordinateProcessor:
         # Избегаем деления на ноль
         safe_time_diffs = np.where(time_diffs_hours == 0, 1.0, time_diffs_hours)
 
-        return (pressures_curr - pressures_prev) / safe_time_diffs
+        result: np.ndarray | float = (pressures_curr - pressures_prev) / safe_time_diffs
+        return result
 
     @staticmethod
-    def compute_acceleration(velocities_kmh: np.ndarray, time_diffs_accel: np.ndarray) -> np.ndarray:
+    def compute_acceleration(velocities_kmh: np.ndarray, time_diffs_accel: np.ndarray) -> np.ndarray | float:
         """
         Вычисляет ускорение движения циклона в км/ч².
 
@@ -225,10 +229,11 @@ class CoordinateProcessor:
         # Избегаем деления на ноль
         safe_time_diffs = np.where(time_diffs_accel == 0, 1.0, time_diffs_accel)
 
-        return (velocities_kmh[1:] - velocities_kmh[:-1]) / safe_time_diffs
+        result: np.ndarray | float = (velocities_kmh[1:] - velocities_kmh[:-1]) / safe_time_diffs
+        return result
 
     @staticmethod
-    def compute_angular_velocity(bearings_deg: np.ndarray, time_diffs_accel: np.ndarray) -> np.ndarray:
+    def compute_angular_velocity(bearings_deg: np.ndarray, time_diffs_accel: np.ndarray) -> np.ndarray | float:
         """
         Вычисляет угловую скорость поворота циклона в градусах/ч.
 
@@ -265,7 +270,8 @@ class CoordinateProcessor:
         # Избегаем деления на ноль
         safe_time_diffs = np.where(time_diffs_accel == 0, 1.0, time_diffs_accel)
 
-        return bearing_diffs / safe_time_diffs
+        result: np.ndarray | float = bearing_diffs / safe_time_diffs
+        return result
 
     @staticmethod
     def normalize_longitude(lon: pd.Series) -> pd.Series:

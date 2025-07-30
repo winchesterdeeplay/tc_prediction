@@ -7,10 +7,11 @@ import torch
 from sklearn.utils.class_weight import compute_sample_weight
 from torch import Tensor, nn
 from torch.nn import Module
+from typing import Self
+from typing import Any
 
 from core.coordinates import CoordinateProcessor
 from core.features import FeatureConfig
-from data_processing import DataProcessor
 
 from .losses import (
     CombinedCycloneLoss,
@@ -70,16 +71,6 @@ class LearnableHorizonNorm(nn.Module):
 
 
 class SimpleGRUModel(Module):
-    """
-    Улучшенная GRU модель для предсказания траекторий циклонов.
-
-    Улучшения для лучшей сходимости:
-    1. Batch Normalization после каждого слоя
-    2. Residual connections
-    3. Улучшенная инициализация весов
-    4. Более стабильная архитектура
-    """
-
     def __init__(
         self,
         sequence_feature_dim: int,
@@ -88,14 +79,12 @@ class SimpleGRUModel(Module):
         num_layers: int = 2,
         dropout: float = 0.1,
         output_dim: int = 2,
-        use_residual: bool = True,
     ):
         super().__init__()
 
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.static_feature_dim = static_feature_dim
-        self.use_residual = use_residual
 
         # GRU слой для последовательностных фич
         self.gru = nn.GRU(
@@ -107,41 +96,31 @@ class SimpleGRUModel(Module):
             bidirectional=False,
         )
 
-        # Batch Normalization для GRU выходов
-        self.gru_norm = nn.BatchNorm1d(hidden_dim)
+
 
         # Dropout после GRU
         self.dropout = nn.Dropout(dropout)
 
-        # Голова для статических фич с улучшенной архитектурой
+        # Голова для статических фич
         self.static_head = nn.Sequential(
             nn.Linear(static_feature_dim, hidden_dim // 2),
-            nn.BatchNorm1d(hidden_dim // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim // 2, hidden_dim // 2),
-            nn.BatchNorm1d(hidden_dim // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
         )
 
-        # Объединяющий слой с residual connections
+        # Объединяющий слой
         combined_dim = hidden_dim + hidden_dim // 2
         self.combined_head = nn.Sequential(
             nn.Linear(combined_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
         )
 
         # Выходной слой
         self.output_layer = nn.Linear(hidden_dim, output_dim)
-
-        # Residual connection для объединенного слоя
-        if use_residual and combined_dim == hidden_dim:
-            self.residual_proj = nn.Linear(combined_dim, hidden_dim)
-        else:
-            self.residual_proj = None
 
     def forward(
         self, sequences: torch.Tensor, static_features: torch.Tensor, seq_lengths: torch.Tensor
@@ -172,8 +151,6 @@ class SimpleGRUModel(Module):
         indices = torch.arange(batch_size, device=gru_out.device)
         sequence_features = gru_out[indices, seq_lengths - 1]
 
-        # Batch Normalization для извлеченных фич
-        sequence_features = self.gru_norm(sequence_features)
 
         # Dropout для последовательностных фич
         sequence_features = self.dropout(sequence_features)
@@ -184,15 +161,11 @@ class SimpleGRUModel(Module):
         # Объединяем фичи
         combined_features = torch.cat([sequence_features, static_features], dim=1)
 
-        # Объединяющий слой с residual connection
+        # Объединяющий слой
         combined_out = self.combined_head(combined_features)
 
-        if self.use_residual and self.residual_proj is not None:
-            residual = self.residual_proj(combined_features)
-            combined_out = combined_out + residual
-
         # Выходной слой
-        return self.output_layer(combined_out)
+        return self.output_layer(combined_out)  # type: ignore[no-any-return]
 
 
 class NNLatLon(Module):
@@ -211,9 +184,10 @@ class NNLatLon(Module):
     def forward(
         self, sequences: torch.Tensor, static_features: torch.Tensor, seq_lengths: torch.Tensor
     ) -> torch.Tensor:
-        return self.model(sequences, static_features, seq_lengths)
+        result: torch.Tensor = self.model(sequences, static_features, seq_lengths)
+        return result
 
-    def predict(self, x: pd.DataFrame, batch_size: int = 256):
+    def predict(self, x: pd.DataFrame, batch_size: int = 256) -> np.ndarray:
         """Predict on a dataframe.
 
         Parameters
@@ -234,7 +208,7 @@ class NNLatLon(Module):
 
         return self._predict_dataframe(x, batch_size)
 
-    def _predict_dataframe(self, x: pd.DataFrame, batch_size: int = 256):
+    def _predict_dataframe(self, x: pd.DataFrame, batch_size: int = 256) -> np.ndarray:
         """Predict from DataFrame with automatic padding."""
         if "sequences" not in x.columns:
             raise ValueError("DataFrame must contain 'sequences' column")
@@ -281,9 +255,6 @@ class NNLatLon(Module):
 
         return torch.cat(preds).numpy()
 
-    # ------------------------------------------------------------------
-    # Training utilities
-    # ------------------------------------------------------------------
     def fit(
         self,
         X_train: pd.DataFrame,
@@ -300,8 +271,8 @@ class NNLatLon(Module):
         save_on_interrupt: bool = False,
         interrupt_save_path: str = "nn_lat_lon.pt",
         shuffle_dataset: bool = False,
-        **unused,
-    ) -> "NNLatLon":
+        **unused: Any,
+    ) -> Self:
         """Simple supervised training loop.
 
         Parameters
@@ -446,7 +417,7 @@ class NNLatLon(Module):
         torch.save(self.state_dict(), path)
 
 
-def _evaluate(model: "NNLatLon", loader, criterion, device):
+def _evaluate(model: "NNLatLon", loader: Any, criterion: Any, device: torch.device) -> float:
     """Utility evaluation on a *loader* returning average loss."""
     model.eval()
     total = 0.0
@@ -486,7 +457,7 @@ def calculate_sample_weights(X: pd.DataFrame, strategy: str = "balanced_horizon"
 
     if strategy == "balanced_horizon":
         # Balance by forecast horizon
-        weights = compute_sample_weight(class_weight="balanced", y=X[feature_cfg.target_time_column])
+        weights: np.ndarray = compute_sample_weight(class_weight="balanced", y=X[feature_cfg.target_time_column])
     elif strategy == "balanced_intensity":
         # Balance by cyclone intensity
         weights = compute_sample_weight(class_weight="balanced", y=X["central_pressure_hpa"])
@@ -505,47 +476,14 @@ class LightningCycloneModel(pl.LightningModule):
         hidden_dim: int = 128,
         learning_rate: float = 1e-3,
         loss_fn: str | nn.Module | None = None,
-        # Оптимизатор параметры
-        optimizer_name: str = "adamw",
-        weight_decay: float = 1e-4,
-        betas: tuple[float, float] = (0.9, 0.999),
-        eps: float = 1e-8,
-        # Scheduler параметры
-        scheduler_name: str = "cosine_warmup",
-        warmup_epochs: int = 3,
-        warmup_start_factor: float = 0.1,
-        warmup_end_factor: float = 1.0,
-        cosine_t0: int = 10,
-        cosine_t_mult: int = 2,
-        cosine_eta_min: float = 1e-6,
-        # Альтернативные scheduler параметры
-        reduce_lr_patience: int = 5,
-        reduce_lr_factor: float = 0.5,
-        reduce_lr_min_lr: float = 1e-6,
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
 
-        # Сохраняем параметры оптимизатора и scheduler
-        self.optimizer_name = optimizer_name
-        self.weight_decay = weight_decay
-        self.betas = betas
-        self.eps = eps
-        self.scheduler_name = scheduler_name
-        self.warmup_epochs = warmup_epochs
-        self.warmup_start_factor = warmup_start_factor
-        self.warmup_end_factor = warmup_end_factor
-        self.cosine_t0 = cosine_t0
-        self.cosine_t_mult = cosine_t_mult
-        self.cosine_eta_min = cosine_eta_min
-        self.reduce_lr_patience = reduce_lr_patience
-        self.reduce_lr_factor = reduce_lr_factor
-        self.reduce_lr_min_lr = reduce_lr_min_lr
-
         # Resolve loss function
         if loss_fn is None:
             # По умолчанию используем улучшенную horizon-aware loss для лучшего обучения
-            self.criterion = ImprovedHorizonAwareSectorLoss()
+            self.criterion: nn.Module = ImprovedHorizonAwareSectorLoss()
         elif isinstance(loss_fn, str):
             loss_name = loss_fn.lower()
             if loss_name in {"mse", "mseloss"}:
@@ -601,8 +539,8 @@ class LightningCycloneModel(pl.LightningModule):
             ),
         )
 
-    def forward(self, sequences: torch.Tensor, static_features: torch.Tensor, seq_lengths: torch.Tensor):  # type: ignore[override]
-        return self.net(sequences, static_features, seq_lengths)
+    def forward(self, sequences: torch.Tensor, static_features: torch.Tensor, seq_lengths: torch.Tensor) -> torch.Tensor:
+        return self.net(sequences, static_features, seq_lengths)  # type: ignore[no-any-return]
 
     def export_to_onnx(
         self,
@@ -764,7 +702,7 @@ class LightningCycloneModel(pl.LightningModule):
             }
 
             outputs = ort_session.run(None, inputs)
-            return outputs[0]
+            return outputs[0]  # type: ignore[no-any-return]
         except Exception as e:
             print(f"❌ Ошибка при выполнении ONNX предсказания: {e}")
             print(
@@ -792,7 +730,7 @@ class LightningCycloneModel(pl.LightningModule):
         self,
         x: pd.DataFrame,
         batch_size: int = 256,
-    ):
+    ) -> np.ndarray:
         """Предсказание на датафрейме.
 
         Parameters
@@ -848,7 +786,7 @@ class LightningCycloneModel(pl.LightningModule):
 
         return torch.cat(preds).numpy()
 
-    def _shared_step(self, batch, stage: str):
+    def _shared_step(self, batch: Any, stage: str) -> torch.Tensor:
         """Общий шаг для train и validation."""
         padded_seqs, static_features, targets, weights, horizon_hours, seq_lengths = batch
 
@@ -868,21 +806,23 @@ class LightningCycloneModel(pl.LightningModule):
             loss = (loss_tensor * weights).mean()
 
         # Log the learnable alpha parameter
-        if hasattr(self.criterion, "learnable_norm"):
-            self.log(f"{stage}_horizon_alpha", self.criterion.learnable_norm.alpha, prog_bar=False, on_epoch=True)
+        if hasattr(self.criterion, "learnable_norm") and hasattr(self.criterion.learnable_norm, "alpha"):
+            alpha_value = self.criterion.learnable_norm.alpha
+            if isinstance(alpha_value, (int, float)):
+                self.log(f"{stage}_horizon_alpha", alpha_value, prog_bar=False, on_epoch=True)
 
         self.log(f"{stage}_loss", loss, prog_bar=True, on_step=True, on_epoch=True)
-        return loss
+        return loss  # type: ignore[no-any-return]
 
-    def training_step(self, batch, batch_idx):  # type: ignore[override]
+    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         return self._shared_step(batch, "train")
 
-    def on_train_epoch_end(self):
+    def on_train_epoch_end(self) -> None:
         """Вычисляет дополнительные метрики в конце эпохи тренировки."""
         # Вычисляем метрику для 48-часового прогноза на тренировочных данных
         self._compute_train_48h_metric()
 
-    def _compute_train_48h_metric(self):
+    def _compute_train_48h_metric(self) -> None:
         """Вычисляет метрику попадания в 300 км сектор для 48-часового прогноза на тренировочных данных."""
         try:
             # Получаем тренировочные данные из trainer
@@ -890,10 +830,10 @@ class LightningCycloneModel(pl.LightningModule):
                 train_loader = self.trainer.datamodule.train_dataloader()
 
                 # Собираем все предсказания и цели
-                all_preds = []
-                all_targets = []
-                all_horizons = []
-                all_sequences = []
+                all_preds: list[torch.Tensor] = []
+                all_targets: list[torch.Tensor] = []
+                all_horizons: list[float] = []
+                all_sequences: list[torch.Tensor] = []
 
                 # Сохраняем текущий режим модели
                 was_training = self.training
@@ -920,17 +860,17 @@ class LightningCycloneModel(pl.LightningModule):
                             all_sequences.append(padded_seqs[i])
 
                 # Объединяем все образцы
-                all_preds = torch.stack(all_preds, dim=0)
-                all_targets = torch.stack(all_targets, dim=0)
-                all_horizons = torch.tensor(all_horizons, dtype=torch.float32)
+                all_preds_tensor = torch.stack(all_preds, dim=0)
+                all_targets_tensor = torch.stack(all_targets, dim=0)
+                all_horizons_tensor = torch.tensor(all_horizons, dtype=torch.float32)
 
                 # Фильтруем только 48-часовые прогнозы
-                mask_48h = all_horizons == 48.0
+                mask_48h = all_horizons_tensor == 48.0
 
                 if mask_48h.sum() > 0:
-                    preds_48h = all_preds[mask_48h]
-                    targets_48h = all_targets[mask_48h]
-                    sequences_48h = [all_sequences[i] for i in range(len(all_sequences)) if mask_48h[i]]
+                    preds_48h = all_preds_tensor[mask_48h]
+                    targets_48h = all_targets_tensor[mask_48h]
+                    sequences_48h = [all_sequences[i] for i in range(len(all_sequences)) if mask_48h[i].item()]
 
                     # Вычисляем точные ошибки в километрах используя haversine distance
                     errors_km = self._compute_haversine_errors_list(sequences_48h, targets_48h, preds_48h)
@@ -954,17 +894,18 @@ class LightningCycloneModel(pl.LightningModule):
             # Логируем 0 в случае ошибки
             self.log("train_p300_48h", 0.0, prog_bar=True, on_epoch=True)
             # Восстанавливаем режим обучения в случае ошибки
-            self.train()
+            if was_training:
+                self.train()
 
-    def validation_step(self, batch, batch_idx):  # type: ignore[override]
+    def validation_step(self, batch: Any, batch_idx: int) -> None:
         self._shared_step(batch, "val")
 
-    def on_validation_epoch_end(self):
+    def on_validation_epoch_end(self) -> None:
         """Вычисляет дополнительные метрики в конце эпохи валидации."""
         # Вычисляем метрику для 48-часового прогноза
         self._compute_48h_metric()
 
-    def _compute_48h_metric(self):
+    def _compute_48h_metric(self) -> None:
         """Вычисляет метрику попадания в 300 км сектор для 48-часового прогноза."""
         try:
             # Получаем валидационные данные из trainer
@@ -972,10 +913,10 @@ class LightningCycloneModel(pl.LightningModule):
                 val_loader = self.trainer.datamodule.val_dataloader()
 
                 # Собираем все предсказания и цели
-                all_preds = []
-                all_targets = []
-                all_horizons = []
-                all_sequences = []
+                all_preds: list[torch.Tensor] = []
+                all_targets: list[torch.Tensor] = []
+                all_horizons: list[float] = []
+                all_sequences: list[torch.Tensor] = []
 
                 # Сохраняем текущий режим модели
                 was_training = self.training
@@ -1004,16 +945,16 @@ class LightningCycloneModel(pl.LightningModule):
                             all_sequences.append(padded_seqs[i])
 
                 # Объединяем все образцы
-                all_preds = torch.stack(all_preds, dim=0)
-                all_targets = torch.stack(all_targets, dim=0)
-                all_horizons = torch.tensor(all_horizons, dtype=torch.float32)
+                all_preds_tensor = torch.stack(all_preds, dim=0)
+                all_targets_tensor = torch.stack(all_targets, dim=0)
+                all_horizons_tensor = torch.tensor(all_horizons, dtype=torch.float32)
 
-                mask_48h = all_horizons == 48.0
+                mask_48h = all_horizons_tensor == 48.0
 
-                if mask_48h.sum() > 0:
-                    preds_48h = all_preds[mask_48h]
-                    targets_48h = all_targets[mask_48h]
-                    sequences_48h = [all_sequences[i] for i in range(len(all_sequences)) if mask_48h[i]]
+                if torch.sum(mask_48h) > 0:
+                    preds_48h = all_preds_tensor[mask_48h]
+                    targets_48h = all_targets_tensor[mask_48h]
+                    sequences_48h = [all_sequences[i] for i in range(len(all_sequences)) if mask_48h[i].item()]
 
                     # Вычисляем точные ошибки в километрах используя haversine distance
                     errors_km = self._compute_haversine_errors_list(sequences_48h, targets_48h, preds_48h)
@@ -1099,164 +1040,17 @@ class LightningCycloneModel(pl.LightningModule):
             return float(seq[last_idx, 0]), float(seq[last_idx, 1])
         return 0.0, 0.0
 
-    def configure_optimizers(self):  # type: ignore[override]
-        """Настройка оптимизатора и scheduler с гибкими параметрами."""
-
-        # Выбираем оптимизатор
-        if self.optimizer_name.lower() == "adamw":
-            optimizer = torch.optim.AdamW(
-                self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay, betas=self.betas, eps=self.eps
-            )
-        elif self.optimizer_name.lower() == "adam":
-            optimizer = torch.optim.Adam(
-                self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay, betas=self.betas, eps=self.eps
-            )
-        elif self.optimizer_name.lower() == "sgd":
-            optimizer = torch.optim.SGD(
-                self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay, momentum=0.9
-            )
-        else:
-            raise ValueError(f"Unknown optimizer: {self.optimizer_name}")
-
-        # Выбираем scheduler
-        if self.scheduler_name.lower() == "cosine_warmup":
-            # Комбинированный scheduler: сначала warmup, затем cosine annealing
-            warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-                optimizer,
-                start_factor=self.warmup_start_factor,
-                end_factor=self.warmup_end_factor,
-                total_iters=self.warmup_epochs,
-            )
-
-            main_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-                optimizer, T_0=self.cosine_t0, T_mult=self.cosine_t_mult, eta_min=self.cosine_eta_min
-            )
-
-            scheduler = torch.optim.lr_scheduler.SequentialLR(
-                optimizer, schedulers=[warmup_scheduler, main_scheduler], milestones=[self.warmup_epochs]
-            )
-
-        elif self.scheduler_name.lower() == "reduce_lr_on_plateau":
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer,
-                mode="min",
-                factor=self.reduce_lr_factor,
-                patience=self.reduce_lr_patience,
-                min_lr=self.reduce_lr_min_lr,
-                verbose=True,
-            )
-
-        elif self.scheduler_name.lower() == "cosine":
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, T_max=100, eta_min=self.cosine_eta_min  # Можно сделать параметром
-            )
-
-        elif self.scheduler_name.lower() == "step":
-            scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)  # Можно сделать параметром
-
-        elif self.scheduler_name.lower() == "none":
-            return {"optimizer": optimizer}
-
-        else:
-            raise ValueError(f"Unknown scheduler: {self.scheduler_name}")
-
-        # Настраиваем возврат scheduler
-        scheduler_config = {
-            "scheduler": scheduler,
-            "interval": "epoch",
-            "frequency": 1,
-        }
-
-        # Для ReduceLROnPlateau нужен монитор
-        if self.scheduler_name.lower() == "reduce_lr_on_plateau":
-            scheduler_config["monitor"] = "val_loss"
-
+    def configure_optimizers(self) -> dict[str, Any]:  # type: ignore[override]
+        optimiser = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimiser, mode="min", factor=0.5, patience=3)
         return {
-            "optimizer": optimizer,
-            "lr_scheduler": scheduler_config,
+            "optimizer": optimiser,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss_epoch",
+                "interval": "epoch",
+                "frequency": 1,
+            },
         }
 
 
-# class InferencePipeline:
-#     """
-#     Pipeline для инференса модели на сырых данных циклонов.
-
-#     Автоматически обрабатывает сырые данные, создает фичи и делает предсказания.
-#     """
-
-#     def __init__(self, model: "LightningCycloneModel", sequence_config=None):
-#         """
-#         Инициализация пайплайна инференса.
-
-#         Args:
-#             model: Обученная модель LightningCycloneModel
-#             sequence_config: Конфигурация для создания последовательностей
-#         """
-#         self.model = model
-#         self.data_processor = DataProcessor(
-#             horizons_hours=[6, 12, 24, 48],  # Поддерживаемые горизонты
-#             train_max_year=2017,  # Дефолтные значения для инференса
-#             val_max_year=2019,
-#             sequence_config=sequence_config,
-#             validate_data=True,
-#         )
-
-#     def predict(self, df: pd.DataFrame, horizon_hours: int = 24, batch_size: int = 256) -> pd.DataFrame:
-#         """
-#         Делает предсказание для сырых данных циклонов.
-
-#         Args:
-#             df: DataFrame с сырыми данными циклонов
-#             horizon_hours: Горизонт прогноза в часах
-#             batch_size: Размер батча для инференса
-
-#         Returns:
-#             DataFrame с предсказаниями (dlat, dlon) и исходными координатами
-#         """
-#         # Проверяем, что горизонт поддерживается
-#         if horizon_hours not in self.data_processor.horizons_hours:
-#             raise ValueError(
-#                 f"Horizon {horizon_hours} not supported. Supported horizons: {self.data_processor.horizons_hours}"
-#             )
-
-#         # Создаем датасет для инференса
-#         inference_dataset = self.data_processor.build_inference_dataset(df, horizon_hours)
-
-#         # Делаем предсказания
-#         predictions = self.model.predict(inference_dataset.X, batch_size=batch_size)
-
-#         # Добавляем предсказания к результату
-#         result_df = inference_dataset.X.copy()
-#         result_df["dlat_pred"] = predictions[:, 0]
-#         result_df["dlon_pred"] = predictions[:, 1]
-
-#         # Вычисляем предсказанные координаты
-#         result_df["lat_pred"] = result_df["lat_deg"] + result_df["dlat_pred"]
-#         result_df["lon_pred"] = result_df["lon_deg"] + result_df["dlon_pred"]
-
-#         return result_df
-
-#     def predict_multiple_horizons(
-#         self, df: pd.DataFrame, horizons: list[int] = [6, 12, 24, 48], batch_size: int = 256
-#     ) -> dict[int, pd.DataFrame]:
-#         """
-#         Делает предсказания для нескольких горизонтов.
-
-#         Args:
-#             df: DataFrame с сырыми данными циклонов
-#             horizons: Список горизонтов прогноза в часах
-#             batch_size: Размер батча для инференса
-
-#         Returns:
-#             Словарь с предсказаниями для каждого горизонта
-#         """
-#         results = {}
-
-#         for horizon in horizons:
-#             try:
-#                 results[horizon] = self.predict(df, horizon, batch_size)
-#             except Exception as e:
-#                 print(f"Error predicting for horizon {horizon}: {e}")
-#                 results[horizon] = None
-
-#         return results

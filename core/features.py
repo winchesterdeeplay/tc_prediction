@@ -42,7 +42,7 @@ class Feature:
     validation_rules: dict | None = None
     compute_function: Callable | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Инициализация правил валидации по умолчанию."""
         if self.validation_rules is None:
             self.validation_rules = {}
@@ -88,7 +88,7 @@ class Feature:
 
         return True
 
-    def compute(self, data: pd.DataFrame, **kwargs) -> np.ndarray:
+    def compute(self, data: pd.DataFrame, **kwargs: Any) -> np.ndarray:
         """
         Вычисляет значение фичи.
 
@@ -106,9 +106,14 @@ class Feature:
         """
         if self.compute_function is None:
             # Для исходных фич просто извлекаем значения
-            return data[self.name].values
+            result: np.ndarray = data[self.name].values
+            return result
 
-        return self.compute_function(data, **kwargs)
+        computed_result: Any = self.compute_function(data, **kwargs)
+        if isinstance(computed_result, np.ndarray):
+            return computed_result
+        else:
+            return np.array(computed_result)
 
 
 class FeatureRegistry:
@@ -119,7 +124,7 @@ class FeatureRegistry:
     их типов, правил валидации и функций вычисления.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Инициализирует реестр фич."""
         self._features = self._create_features()
         self._feature_indices = self._build_feature_indices()
@@ -301,7 +306,7 @@ class FeatureRegistry:
         return [f.name for f in self.get_required_features()]
 
     # Функции вычисления для производных фич
-    def _compute_velocity(self, data: pd.DataFrame, **kwargs) -> np.ndarray:
+    def _compute_velocity(self, data: pd.DataFrame, **kwargs: Any) -> np.ndarray:
         """Вычисляет скорость движения."""
         if len(data) < 2:
             return np.zeros(len(data))
@@ -317,7 +322,7 @@ class FeatureRegistry:
         result[1:] = velocities
         return result
 
-    def _compute_bearing(self, data: pd.DataFrame, **kwargs) -> np.ndarray:
+    def _compute_bearing(self, data: pd.DataFrame, **kwargs: Any) -> np.ndarray:
         """Вычисляет направление движения."""
         if len(data) < 2:
             return np.zeros(len(data))
@@ -331,7 +336,7 @@ class FeatureRegistry:
         result[1:] = bearings
         return result
 
-    def _compute_acceleration(self, data: pd.DataFrame, **kwargs) -> np.ndarray:
+    def _compute_acceleration(self, data: pd.DataFrame, **kwargs: Any) -> np.ndarray:
         """Вычисляет ускорение движения."""
         if len(data) < 3:
             return np.zeros(len(data))
@@ -355,7 +360,7 @@ class FeatureRegistry:
         result[2:] = accelerations
         return result
 
-    def _compute_angular_velocity(self, data: pd.DataFrame, **kwargs) -> np.ndarray:
+    def _compute_angular_velocity(self, data: pd.DataFrame, **kwargs: Any) -> np.ndarray:
         """Вычисляет угловую скорость."""
         if len(data) < 3:
             return np.zeros(len(data))
@@ -381,7 +386,7 @@ class FeatureRegistry:
         result[2:] = angular_velocities
         return result
 
-    def _compute_pressure_change(self, data: pd.DataFrame, **kwargs) -> np.ndarray:
+    def _compute_pressure_change(self, data: pd.DataFrame, **kwargs: Any) -> np.ndarray:
         """Вычисляет изменение давления."""
         if len(data) < 2:
             return np.zeros(len(data))
@@ -393,7 +398,7 @@ class FeatureRegistry:
         pressure_changes = CoordinateProcessor.compute_pressure_change(pressures[:-1], pressures[1:], time_diffs)
 
         result = np.zeros(len(data))
-        if len(pressure_changes) > 0:
+        if isinstance(pressure_changes, np.ndarray) and len(pressure_changes) > 0:
             result[1 : 1 + len(pressure_changes)] = pressure_changes
         return result
 
@@ -405,7 +410,7 @@ class FeatureRegistry:
         return np.where(time_diffs == 0, 1.0, time_diffs)
 
     # Функции для статических фич
-    def _compute_day_of_year_sin(self, data: pd.DataFrame, **kwargs) -> np.ndarray:
+    def _compute_day_of_year_sin(self, data: pd.DataFrame, **kwargs: Any) -> np.ndarray:
         """Вычисляет синус дня года."""
         analysis_time = kwargs.get("analysis_time")
         if analysis_time is None:
@@ -414,7 +419,7 @@ class FeatureRegistry:
         day_of_year = analysis_time.timetuple().tm_yday
         return np.full(len(data), np.sin(TimeConstants.TWO_PI * day_of_year / TimeConstants.DAYS_IN_LEAP_YEAR))
 
-    def _compute_day_of_year_cos(self, data: pd.DataFrame, **kwargs) -> np.ndarray:
+    def _compute_day_of_year_cos(self, data: pd.DataFrame, **kwargs: Any) -> np.ndarray:
         """Вычисляет косинус дня года."""
         analysis_time = kwargs.get("analysis_time")
         if analysis_time is None:
@@ -423,7 +428,7 @@ class FeatureRegistry:
         day_of_year = analysis_time.timetuple().tm_yday
         return np.full(len(data), np.cos(TimeConstants.TWO_PI * day_of_year / TimeConstants.DAYS_IN_LEAP_YEAR))
 
-    def _compute_month_of_year_sin(self, data: pd.DataFrame, **kwargs) -> np.ndarray:
+    def _compute_month_of_year_sin(self, data: pd.DataFrame, **kwargs: Any) -> np.ndarray:
         """Вычисляет синус месяца года."""
         analysis_time = kwargs.get("analysis_time")
         if analysis_time is None:
@@ -432,7 +437,7 @@ class FeatureRegistry:
         month_of_year = analysis_time.month
         return np.full(len(data), np.sin(TimeConstants.TWO_PI * month_of_year / TimeConstants.MONTHS_IN_YEAR))
 
-    def _compute_month_of_year_cos(self, data: pd.DataFrame, **kwargs) -> np.ndarray:
+    def _compute_month_of_year_cos(self, data: pd.DataFrame, **kwargs: Any) -> np.ndarray:
         """Вычисляет косинус месяца года."""
         analysis_time = kwargs.get("analysis_time")
         if analysis_time is None:
@@ -688,7 +693,7 @@ class FeatureConfig:
     и предоставляет удобный интерфейс для работы с ними.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Инициализирует конфигурацию фич и создает валидатор.
         """
@@ -773,7 +778,8 @@ class FeatureConfig:
 
         for i, feature in enumerate(derived_features):
             if feature.compute_function:
-                result[:, i] = feature.compute(seq_df)
+                computed_result: np.ndarray = feature.compute(seq_df)
+                result[:, i] = computed_result
 
         return result
 
@@ -832,6 +838,6 @@ class FeatureConfig:
             return np.array([]).reshape(0, len(self.sequence_features))
 
         # Объединяем фичи
-        seq_features = np.concatenate([raw_features, derived_features], axis=1)
+        seq_features: np.ndarray = np.concatenate([raw_features, derived_features], axis=1)
 
         return seq_features

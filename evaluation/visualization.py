@@ -1,8 +1,9 @@
+from typing import Any
 import folium
 import numpy as np
 import pandas as pd
 from IPython.display import HTML, display
-from tabulate import tabulate  # type: ignore
+from tabulate import tabulate
 
 from core.features import FeatureConfig
 from evaluation.evaluator import extract_current_coordinates
@@ -185,7 +186,7 @@ def create_popup_html(
     """
 
 
-def plot_trajectory(model, X: pd.DataFrame, y: pd.DataFrame, cyclone_id: str) -> None:
+def plot_trajectory(model: Any, X: pd.DataFrame, y: pd.DataFrame, cyclone_id: str) -> None:
     """
     Визуализирует полную траекторию циклона: истинную и предсказанную.
 
@@ -297,7 +298,7 @@ def plot_trajectory(model, X: pd.DataFrame, y: pd.DataFrame, cyclone_id: str) ->
         <p><i class="fa fa-circle" style="color:red"></i> Ошибка &gt; 100 км</p>
     </div>
     """
-    m.get_root().html.add_child(folium.Element(legend_html))
+    m.get_root().html.add_child(folium.Element(legend_html))  # type: ignore[attr-defined]
 
     display(m)
 
@@ -360,7 +361,7 @@ def plot_error_distribution(errors: np.ndarray) -> None:
 
 
 def plot_enhanced_trajectory(
-    model, X: pd.DataFrame, y: pd.DataFrame, cyclone_id: str, include_timestamps: bool = True
+    model: Any, X: pd.DataFrame, y: pd.DataFrame, cyclone_id: str, include_timestamps: bool = True
 ) -> None:
     """
     Расширенная визуализация траектории с временными метками и детальной информацией.
@@ -512,7 +513,7 @@ def plot_enhanced_trajectory(
         <p style="margin: 2px 0; font-size: 10px;">🟢 &lt; 50 км | 🟠 50-100 км | 🔴 100-200 км | ⚫ &gt; 200 км</p>
     </div>
     """
-    m.get_root().html.add_child(folium.Element(stats_html))
+    m.get_root().html.add_child(folium.Element(stats_html))  # type: ignore[attr-defined]
 
     # Легенда
     legend_html = """
@@ -530,13 +531,13 @@ def plot_enhanced_trajectory(
         <p style="margin: 2px 0;">🔴 Малые точки - предсказания</p>
     </div>
     """
-    m.get_root().html.add_child(folium.Element(legend_html))
+    m.get_root().html.add_child(folium.Element(legend_html))  # type: ignore[attr-defined]
 
     display(m)
 
 
 def plot_animated_trajectory(
-    model, X: pd.DataFrame, y: pd.DataFrame, cyclone_id: str, animation_speed: int = 1000
+    model: Any, X: pd.DataFrame, y: pd.DataFrame, cyclone_id: str, animation_speed: int = 1000
 ) -> None:
     """
     Создает анимированную визуализацию траектории.
@@ -678,7 +679,7 @@ def plot_animated_trajectory(
         <p style="margin: 2px 0; font-size: 10px;">🟢 &lt; 50 км | 🟠 50-100 км | 🔴 100-200 км | ⚫ &gt; 200 км</p>
     </div>
     """
-    m.get_root().html.add_child(folium.Element(stats_html))
+    m.get_root().html.add_child(folium.Element(stats_html))  # type: ignore[attr-defined]
 
     # Легенда
     legend_html = """
@@ -695,7 +696,7 @@ def plot_animated_trajectory(
         <p style="margin: 2px 0;">⚫ Точки с ошибкой &gt; 200 км</p>
     </div>
     """
-    m.get_root().html.add_child(folium.Element(legend_html))
+    m.get_root().html.add_child(folium.Element(legend_html))  # type: ignore[attr-defined]
 
     display(m)
 

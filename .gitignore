@@ -12,3 +12,4 @@ old_notebooks/
 .mypy_cache/
 .ruff_cache/
 lightning_logs/
+*.pkl

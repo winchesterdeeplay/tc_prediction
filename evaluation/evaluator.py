@@ -1,3 +1,4 @@
+from typing import Any
 import numpy as np
 import pandas as pd
 
@@ -45,7 +46,7 @@ class ModelEvaluator:
         """
         self.coord_processor = coordinate_processor or CoordinateProcessor()
 
-    def evaluate_horizon(self, model, X_horizon: pd.DataFrame, y_horizon: pd.DataFrame) -> dict[str, float]:
+    def evaluate_horizon(self, model: Any, X_horizon: pd.DataFrame, y_horizon: pd.DataFrame) -> dict[str, float]:
         """
         Оценивает производительность модели для одного горизонта прогноза.
 
