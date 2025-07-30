@@ -5,8 +5,7 @@ from typing import Any
 
 from inference import ONNXInferencePipeline, ONNXInferencePipelineFactory
 
-from .models import (CycloneData, ModelInfoResponse, Prediction,
-                     cyclone_data_to_dataframe, dataframe_to_predictions)
+from .models import CycloneData, ModelInfoResponse, Prediction, cyclone_data_to_dataframe, dataframe_to_predictions
 
 
 class CyclonePredictionService:

@@ -8,9 +8,14 @@ from typing import Any, AsyncGenerator, Callable
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from .models import (HealthResponse, ModelInfoResponse,
-                     MultipleHorizonsRequest, MultipleHorizonsResponse,
-                     PredictionRequest, PredictionResponse)
+from .models import (
+    HealthResponse,
+    ModelInfoResponse,
+    MultipleHorizonsRequest,
+    MultipleHorizonsResponse,
+    PredictionRequest,
+    PredictionResponse,
+)
 from .service import CyclonePredictionService
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

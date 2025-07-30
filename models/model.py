@@ -12,53 +12,12 @@ from torch.nn import Module
 from core.coordinates import CoordinateProcessor
 from core.features import FeatureConfig
 
-from .losses import (CombinedCycloneLoss, HaversineLoss,
-                     HorizonAwareCombinedCycloneLoss,
-                     HorizonAwareHaversineLoss, HorizonAwareNLLGaussianLoss,
-                     HorizonAwareSectorLoss, NLLGaussianLoss, SectorLoss)
-
-
-class LearnableHorizonNorm(nn.Module):
-    """
-    Learnable horizon normalization layer.
-
-    This layer learns the optimal power for horizon normalization,
-    making the horizon-aware loss functions more adaptive.
-
-    Parameters:
-    -----------
-    init_alpha : float
-        Initial value for alpha parameter (default: 0.5)
-    """
-
-    def __init__(self, init_alpha: float = 0.5):
-        super().__init__()
-        # alpha in (0,1) via sigmoid
-        self.logit_alpha = nn.Parameter(torch.logit(torch.tensor(init_alpha)))
-
-    def forward(self, d: Tensor, H: Tensor) -> Tensor:
-        """
-        Apply learnable horizon normalization.
-
-        Parameters:
-        -----------
-        d : Tensor
-            Distance or loss values to normalize
-        H : Tensor
-            Horizon values in hours
-
-        Returns:
-        --------
-        Tensor
-            Normalized values: d / H^alpha
-        """
-        alpha = torch.sigmoid(self.logit_alpha)
-        return d / torch.pow(H + 1e-8, alpha)
-
-    @property
-    def alpha(self) -> float:
-        """Get the current alpha value."""
-        return torch.sigmoid(self.logit_alpha).item()
+from .losses import (
+    CombinedCycloneLoss,
+    HaversineLoss,
+    NLLGaussianLoss,
+    SectorLoss,
+)
 
 
 class SimpleGRUModel(Module):
@@ -66,7 +25,7 @@ class SimpleGRUModel(Module):
         self,
         sequence_feature_dim: int,
         static_feature_dim: int = 5,
-        hidden_dim: int = 128,
+        hidden_dim: int = 64,
         num_layers: int = 2,
         dropout: float = 0.1,
         output_dim: int = 2,
@@ -447,26 +406,18 @@ class LightningCycloneModel(pl.LightningModule):
                 self.criterion = nn.MSELoss()
             elif loss_name in {"sector", "sectorloss"}:
                 self.criterion = SectorLoss()
-            elif loss_name in {"horizon_sector", "horizon_aware_sector", "horizonsectorloss"}:
-                self.criterion = HorizonAwareSectorLoss()
             elif loss_name in {"nll", "gaussian", "negloglik", "nllgaussian"}:
                 self.criterion = NLLGaussianLoss()
-            elif loss_name in {"horizon_nll", "horizon_aware_nll", "horizonnllgaussianloss"}:
-                self.criterion = HorizonAwareNLLGaussianLoss()
             elif loss_name in {"haversine", "haversineloss"}:
                 self.criterion = HaversineLoss()
-            elif loss_name in {"horizon_haversine", "horizon_aware_haversine", "horizonhaversineloss"}:
-                self.criterion = HorizonAwareHaversineLoss()
             elif loss_name in {"combined", "combinedcyclone", "combinedcycloneloss"}:
                 self.criterion = CombinedCycloneLoss()
-            elif loss_name in {"horizon_combined", "horizon_aware_combined", "horizoncombinedcycloneloss"}:
-                self.criterion = HorizonAwareCombinedCycloneLoss()
             else:
                 raise ValueError(f"Unknown loss function: {loss_fn}")
         else:
             self.criterion = loss_fn
 
-        output_dim = 4 if isinstance(self.criterion, (NLLGaussianLoss, HorizonAwareNLLGaussianLoss)) else 2
+        output_dim = 4 if isinstance(self.criterion, (NLLGaussianLoss)) else 2
         self.net = NNLatLon(
             sequence_feature_dim=sequence_feature_dim,
             static_feature_dim=static_feature_dim,
@@ -483,10 +434,6 @@ class LightningCycloneModel(pl.LightningModule):
                 NLLGaussianLoss,
                 HaversineLoss,
                 CombinedCycloneLoss,
-                HorizonAwareSectorLoss,
-                HorizonAwareNLLGaussianLoss,
-                HorizonAwareHaversineLoss,
-                HorizonAwareCombinedCycloneLoss,
             ),
         )
 

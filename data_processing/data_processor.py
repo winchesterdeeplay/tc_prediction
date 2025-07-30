@@ -60,7 +60,7 @@ class DataProcessor(BaseDataProcessor):
         self.train_max_year = train_max_year
         self.val_max_year = val_max_year
 
-    def build_dataset(self, df: pd.DataFrame) -> ProcessedDataset:
+    def build_dataset(self, df: pd.DataFrame, horizon_hours: int) -> ProcessedDataset:
         """
         Строит обучающий датасет.
 
@@ -68,6 +68,8 @@ class DataProcessor(BaseDataProcessor):
         ----------
         df : pd.DataFrame
             Входной датафрейм
+        horizon_hours : int
+            Горизонт прогноза в часах
 
         Returns
         -------

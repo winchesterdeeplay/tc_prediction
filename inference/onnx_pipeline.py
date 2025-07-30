@@ -65,7 +65,7 @@ class ONNXInferencePipeline:
             seq_config = SequenceConfig(**sequence_config)
         elif sequence_config is None:
             seq_config = None
-            
+
         self.data_processor = InferenceDataProcessor(
             sequence_config=seq_config,
             validate_data=validate_data,

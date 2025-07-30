@@ -120,7 +120,7 @@ class BaseDataProcessor(ABC):
         return cdf.iloc[seq_start : i + 1]
 
     @abstractmethod
-    def build_dataset(self, df: pd.DataFrame) -> ProcessedDataset:
+    def build_dataset(self, df: pd.DataFrame, horizon_hours: int) -> ProcessedDataset:
         """
         Строит датасет.
 
@@ -128,6 +128,8 @@ class BaseDataProcessor(ABC):
         ----------
         df : pd.DataFrame
             Входной датафрейм
+        horizon_hours : int
+            Горизонт прогноза в часах
 
         Returns
         -------
