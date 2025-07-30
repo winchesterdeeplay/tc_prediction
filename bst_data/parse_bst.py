@@ -10,11 +10,8 @@
 
 import argparse
 import logging
-import re
-import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
 
 import pandas as pd
 
@@ -48,15 +45,24 @@ def _parse_header(tokens: list[str]) -> dict:
 
 
 def _safe_int(val: str | None) -> int | None:
+    """Convert *val* to int when possible, otherwise return ``None``.
+
+    The additional ``isinstance`` guard helps static type checkers understand
+    that ``val`` cannot be ``None`` when passed to ``int``.
+    """
+    if val is None or val == "":
+        return None
     try:
-        return int(val) if val not in {None, ""} else None
-    except ValueError:
+        return int(val)  # type: ignore[arg-type]  # safe after the guard
+    except (ValueError, TypeError):
         return None
 
 
 def _parse_data_line(tokens: list[str]) -> dict:
     """Parse a data line (analysis line) into dict of values. Tokens already split."""
-    data: dict[str, int | str | float | None] = {}
+    from typing import Union
+
+    data: dict[str, Union[int, str, float, datetime, None]] = {}
 
     # Mandatory fields (we assume at least these 6 present)
     t_time = tokens[0]
@@ -66,8 +72,12 @@ def _parse_data_line(tokens: list[str]) -> dict:
     data["analysis_time"] = dt
     data["indicator"] = tokens[1]
     data["grade"] = _safe_int(tokens[2])
-    data["lat_deg"] = _safe_int(tokens[3]) / 10 if len(tokens) > 3 and tokens[3].isdigit() else None
-    data["lon_deg"] = _safe_int(tokens[4]) / 10 if len(tokens) > 4 and tokens[4].isdigit() else None
+
+    lat_raw = _safe_int(tokens[3]) if len(tokens) > 3 else None
+    data["lat_deg"] = lat_raw / 10 if lat_raw is not None else None
+
+    lon_raw = _safe_int(tokens[4]) if len(tokens) > 4 else None
+    data["lon_deg"] = lon_raw / 10 if lon_raw is not None else None
     data["central_pressure_hpa"] = _safe_int(tokens[5])
 
     # Optional fields following central pressure
@@ -151,7 +161,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: List[str] | None = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
 
