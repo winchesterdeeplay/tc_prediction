@@ -6,8 +6,9 @@ import onnxruntime as ort
 import pandas as pd
 import pytorch_lightning as pl
 import torch
-from torch import Tensor, nn
+from torch import nn
 from torch.nn import Module
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 from core.coordinates import CoordinateProcessor
 from core.features import FeatureConfig
@@ -20,33 +21,46 @@ from .losses import (
 )
 
 
-class SimpleGRUModel(Module):
+class SimpleTransformerModel(Module):
     def __init__(
         self,
         sequence_feature_dim: int,
         static_feature_dim: int = 5,
         hidden_dim: int = 64,
         num_layers: int = 2,
+        num_heads: int = 8,
         dropout: float = 0.1,
         output_dim: int = 2,
+        max_seq_length: int = 1000,
     ):
         super().__init__()
 
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.static_feature_dim = static_feature_dim
+        self.sequence_feature_dim = sequence_feature_dim
+        self.max_seq_length = max_seq_length
 
-        # GRU слой для последовательностных фич
-        self.gru = nn.GRU(
-            input_size=sequence_feature_dim,
-            hidden_size=hidden_dim,
-            num_layers=num_layers,
-            dropout=dropout if num_layers > 1 else 0,
+        # Проекция входных фич в hidden_dim
+        self.input_projection = nn.Linear(sequence_feature_dim, hidden_dim)
+        
+        # Learnable Positional Encoding
+        self.pos_encoding = nn.Parameter(torch.randn(max_seq_length, hidden_dim))
+        
+        # Sinusoidal Positional Encoding
+        # self.register_buffer('pos_encoding', self._create_sinusoidal_encoding(max_seq_length, hidden_dim))
+        
+        # Transformer Encoder слои
+        encoder_layer = TransformerEncoderLayer(
+            d_model=hidden_dim,
+            nhead=num_heads,
+            dim_feedforward=hidden_dim * 4,
+            dropout=dropout,
             batch_first=True,
-            bidirectional=False,
+            activation='relu'
         )
-
-        # Dropout после GRU
+        self.transformer_encoder = TransformerEncoder(encoder_layer, num_layers=num_layers, enable_nested_tensor=False)
+        
         self.dropout = nn.Dropout(dropout)
 
         # Голова для статических фич
@@ -70,11 +84,31 @@ class SimpleGRUModel(Module):
         # Выходной слой
         self.output_layer = nn.Linear(hidden_dim, output_dim)
 
+    def _create_sinusoidal_encoding(self, max_len: int, d_model: int) -> torch.Tensor:
+        """
+        Создает sinusoidal positional encoding.
+        
+        Args:
+            max_len: Максимальная длина последовательности
+            d_model: Размерность модели
+            
+        Returns:
+            Positional encoding tensor [max_len, d_model]
+        """
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-torch.log(torch.tensor(10000.0)) / d_model))
+        
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        
+        return pe
+
     def forward(
         self, sequences: torch.Tensor, static_features: torch.Tensor, seq_lengths: torch.Tensor
     ) -> torch.Tensor:
         """
-        Прямой проход через улучшенную модель.
+        Прямой проход через Transformer модель.
 
         Parameters:
         ----------
@@ -90,15 +124,25 @@ class SimpleGRUModel(Module):
         Tensor
             Предсказанные изменения координат (dlat, dlon)
         """
-        # GRU проход для последовательностных фич
-        gru_out, hidden = self.gru(sequences)
-
+        batch_size, seq_len, feature_dim = sequences.shape
+        
+        # Проекция входных фич
+        x = self.input_projection(sequences)  # [batch_size, seq_len, hidden_dim]
+        
+        # Добавляем positional encoding
+        pos_enc = self.pos_encoding[:seq_len, :].unsqueeze(0).expand(batch_size, -1, -1)
+        x = x + pos_enc
+        
+        # Создаем маску для padding (True для padding токенов)
+        mask = torch.arange(seq_len, device=sequences.device).unsqueeze(0) >= seq_lengths.unsqueeze(1)
+        
+        # Transformer Encoder проход
+        transformer_out = self.transformer_encoder(x, src_key_padding_mask=mask)
+        
         # Извлекаем последние состояния для каждой последовательности
-        # Используем ONNX-совместимый подход вместо цикла
-        batch_size = gru_out.size(0)
-        indices = torch.arange(batch_size, device=gru_out.device)
-        sequence_features = gru_out[indices, seq_lengths - 1]
-
+        indices = torch.arange(batch_size, device=transformer_out.device)
+        sequence_features = transformer_out[indices, seq_lengths - 1]
+        
         # Dropout для последовательностных фич
         sequence_features = self.dropout(sequence_features)
 
@@ -115,6 +159,9 @@ class SimpleGRUModel(Module):
         return self.output_layer(combined_out)  # type: ignore[no-any-return]
 
 
+
+
+
 class NNLatLon(Module):
     """
     Neural Network model for predicting cyclone trajectory changes.
@@ -123,10 +170,10 @@ class NNLatLon(Module):
     """
 
     def __init__(
-        self, sequence_feature_dim: int, static_feature_dim: int = 5, hidden_dim: int = 128, output_dim: int = 2
+        self, sequence_feature_dim: int, static_feature_dim: int = 5, hidden_dim: int = 128, num_layers: int = 2, num_heads: int = 8, output_dim: int = 2
     ):
         super().__init__()
-        self.model = SimpleGRUModel(sequence_feature_dim, static_feature_dim, hidden_dim, output_dim=output_dim)
+        self.model = SimpleTransformerModel(sequence_feature_dim, static_feature_dim, hidden_dim, num_layers, num_heads, output_dim=output_dim)
 
     def forward(
         self, sequences: torch.Tensor, static_features: torch.Tensor, seq_lengths: torch.Tensor
@@ -390,6 +437,8 @@ class LightningCycloneModel(pl.LightningModule):
         sequence_feature_dim: int,
         static_feature_dim: int = 5,
         hidden_dim: int = 128,
+        num_layers: int = 2,
+        num_heads: int = 8,
         learning_rate: float = 1e-3,
         loss_fn: str | nn.Module | None = None,
     ) -> None:
@@ -422,6 +471,8 @@ class LightningCycloneModel(pl.LightningModule):
             sequence_feature_dim=sequence_feature_dim,
             static_feature_dim=static_feature_dim,
             hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            num_heads=num_heads,
             output_dim=output_dim,
         )
         self.learning_rate = learning_rate
@@ -448,7 +499,9 @@ class LightningCycloneModel(pl.LightningModule):
         sequence_length: int = 50,
         batch_size: int = 1,
         dynamic_axes: bool = True,
-        opset_version: int = 11,
+        opset_version: int = 13,
+        validate: bool = True,
+        device: str = "cpu",
     ) -> None:
         """
         Экспортирует модель в ONNX формат.
@@ -465,16 +518,19 @@ class LightningCycloneModel(pl.LightningModule):
             Использовать ли динамические оси для batch_size и sequence_length
         opset_version : int
             Версия ONNX операторов
+        validate : bool
+            Выполнять ли валидацию после экспорта
         """
+        print(f"🔄 Создаем тестовые данные для экспорта модели в ONNX...")
         self.eval()
 
         feature_cfg = FeatureConfig()
         feature_dims = feature_cfg.get_feature_dimensions()
 
         # Создаем тестовые данные
-        dummy_sequences = torch.randn(batch_size, sequence_length, feature_dims["sequence"])
-        dummy_static = torch.randn(batch_size, feature_dims["static"])
-        dummy_lengths = torch.randint(1, sequence_length + 1, (batch_size,))
+        dummy_sequences = torch.randn(batch_size, sequence_length, feature_dims["sequence"]).to(device)
+        dummy_static = torch.randn(batch_size, feature_dims["static"]).to(device)
+        dummy_lengths = torch.randint(1, sequence_length + 1, (batch_size,)).to(device)
 
         # Настраиваем динамические оси
         if dynamic_axes:
@@ -486,7 +542,9 @@ class LightningCycloneModel(pl.LightningModule):
             }
         else:
             dynamic_axes_config = None
-
+            
+        print("🔄 Начинаем экспорт модели в ONNX...")
+        
         torch.onnx.export(
             self.net,
             (dummy_sequences, dummy_static, dummy_lengths),
@@ -497,15 +555,17 @@ class LightningCycloneModel(pl.LightningModule):
             input_names=["sequences", "static_features", "seq_lengths"],
             output_names=["output"],
             dynamic_axes=dynamic_axes_config,
-            verbose=False,
+            verbose=True,
             keep_initializers_as_inputs=False,
             export_modules_as_functions=False,
+            dynamo=True
         )
 
         print(f"✅ Модель успешно экспортирована в ONNX: {filepath}")
 
-        # Проверяем экспортированную модель
-        self._validate_onnx_model(filepath, dummy_sequences, dummy_static, dummy_lengths)
+        if validate:
+            print("🔍 Валидируем экспортированную модель...")
+            self._validate_onnx_model(filepath, dummy_sequences, dummy_static, dummy_lengths)
 
     def _validate_onnx_model(
         self, filepath: str, test_sequences: torch.Tensor, test_static: torch.Tensor, test_lengths: torch.Tensor
