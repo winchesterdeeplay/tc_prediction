@@ -16,6 +16,7 @@ class ONNXInferencePipeline:
         sequence_config: dict | None = None,
         providers: list[str] | None = None,
         session_options: ort.SessionOptions | None = None,
+        validate_data: bool = True,
     ):
         """
         Инициализация ONNX Inference Pipeline.
@@ -62,7 +63,7 @@ class ONNXInferencePipeline:
         # Инициализация InferenceDataProcessor для продакшена
         self.data_processor = InferenceDataProcessor(
             sequence_config=sequence_config,  # type: ignore
-            validate_data=True,
+            validate_data=validate_data,
         )
 
         # Получение информации о модели

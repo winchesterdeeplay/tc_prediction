@@ -21,7 +21,9 @@ class HorizonAwareLoss(Module):
         Обучаемый слой нормализации
     """
 
-    def __init__(self, normalize_by_horizon: bool = True, norm_alpha_init: float = 0.3, weight_beta: float = 0.7) -> None:
+    def __init__(
+        self, normalize_by_horizon: bool = True, norm_alpha_init: float = 0.3, weight_beta: float = 0.7
+    ) -> None:
         super().__init__()
         self.normalize_by_horizon = normalize_by_horizon
         self.weight_beta = weight_beta
@@ -66,7 +68,7 @@ class HorizonAwareLoss(Module):
             Веса для каждого сэмпла
         """
         weights = torch.pow(horizon_hours, self.weight_beta)
-        result: Tensor = weights / weights.mean()   
+        result: Tensor = weights / weights.mean()
         return result
 
 

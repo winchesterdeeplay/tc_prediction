@@ -7,6 +7,7 @@ from tabulate import tabulate
 
 from core.features import FeatureConfig
 from evaluation.evaluator import extract_current_coordinates
+from inference import ONNXInferencePipeline, ONNXInferencePipelineFactory
 
 
 def extract_coordinates_from_dataframe(cyclone_data: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
@@ -186,71 +187,136 @@ def create_popup_html(
     """
 
 
-def plot_trajectory(model: Any, X: pd.DataFrame, y: pd.DataFrame, cyclone_id: str) -> None:
+def plot_trajectory(pipeline: Any, cyclone_data: pd.DataFrame, cyclone_id: str, horizon_hours: int = 24) -> None:
     """
     Визуализирует полную траекторию циклона: истинную и предсказанную.
 
     Параметры:
     -----------
-    model : Any
-        Обученная модель с методом predict
-    X : pd.DataFrame
-        Датафрейм входных признаков
-    y : pd.DataFrame
-        Датафрейм целевых значений
+    pipeline : Any
+        ONNX Inference Pipeline с методом predict
+    cyclone_data : pd.DataFrame
+        Датафрейм с сырыми данными циклонов
     cyclone_id : str
         ID циклона для визуализации
+    horizon_hours : int
+        Горизонт прогноза в часах (6, 12, 24, 48)
     """
-    # Фильтруем данные для cyclone_id
-    cyclone_data = X[X["intl_id"] == cyclone_id].copy()
-    if len(cyclone_data) == 0:
+    # Проверяем, что cyclone_id является строкой
+    cyclone_id = str(cyclone_id)
+
+    # Фильтруем данные для cyclone_id с безопасной проверкой
+    try:
+        cyclone_subset = cyclone_data[cyclone_data["intl_id"].astype(str) == cyclone_id].copy()
+    except (KeyError, AttributeError) as e:
+        print(f"Предупреждение: проблема с фильтрацией по intl_id: {e}")
+        print(f"Доступные колонки: {list(cyclone_data.columns)}")
+        raise ValueError(f"Не удалось отфильтровать данные для циклона {cyclone_id}")
+
+    if len(cyclone_subset) == 0:
         raise ValueError(f"Циклон с ID {cyclone_id} не найден")
 
-    # Извлекаем координаты
-    true_lats, true_lons = extract_coordinates_from_dataframe(cyclone_data)
+    # Сортируем данные по времени
+    cyclone_subset = cyclone_subset.sort_values("analysis_time").reset_index(drop=True)
 
-    # Получаем предсказания
-    predictions = model.predict(cyclone_data)
-    pred_lats = true_lats + predictions[:, 0]
-    pred_lons = true_lons + predictions[:, 1]
+    # Делаем предсказание для каждой точки отдельно
+    true_lats: list[float] = []
+    true_lons: list[float] = []
+    pred_lats: list[float] = []
+    pred_lons: list[float] = []
+
+    for i in range(len(cyclone_subset)):
+        # Берем срез данных до текущей точки (включая её)
+        current_slice = cyclone_subset.iloc[: i + 1].copy()
+
+        try:
+            # Получаем предсказание для текущего среза
+            prediction = pipeline.predict(current_slice, horizon_hours=horizon_hours)
+
+            if len(prediction) > 0:
+                # Берем последнее предсказание (для текущей точки)
+                last_pred = prediction.iloc[-1]
+
+                # Истинные координаты (текущая точка)
+                true_lat = last_pred["lat_deg"]
+                true_lon = last_pred["lon_deg"]
+
+                # Предсказанные координаты
+                pred_lat = last_pred["lat_pred"]
+                pred_lon = last_pred["lon_pred"]
+
+                true_lats.append(true_lat)
+                true_lons.append(true_lon)
+                pred_lats.append(pred_lat)
+                pred_lons.append(pred_lon)
+            else:
+                # Если не удалось получить предсказание, используем текущие координаты
+                current_point = cyclone_subset.iloc[i]
+                true_lats.append(current_point["lat_deg"])
+                true_lons.append(current_point["lon_deg"])
+                pred_lats.append(current_point["lat_deg"])
+                pred_lons.append(current_point["lon_deg"])
+
+        except Exception as e:
+            # Если не удалось получить предсказание, используем текущие координаты
+            current_point = cyclone_subset.iloc[i]
+            true_lats.append(current_point["lat_deg"])
+            true_lons.append(current_point["lon_deg"])
+            pred_lats.append(current_point["lat_deg"])
+            pred_lons.append(current_point["lon_deg"])
+
+    if len(true_lats) == 0:
+        raise ValueError(f"Не удалось получить предсказания для циклона {cyclone_id}")
+
+    # Convert to numpy arrays
+    true_lats_array = np.array(true_lats)
+    true_lons_array = np.array(true_lons)
+    pred_lats_array = np.array(pred_lats)
+    pred_lons_array = np.array(pred_lons)
 
     # Вычисляем метрики
-    errors_km, displacements_km, _ = calculate_error_metrics(true_lats, true_lons, pred_lats, pred_lons)
+    errors_km, displacements_km, _ = calculate_error_metrics(
+        true_lats_array, true_lons_array, pred_lats_array, pred_lons_array
+    )
 
     # Создаем карту
-    m = folium.Map(location=[np.mean(true_lats), np.mean(true_lons)], zoom_start=5)
+    m = folium.Map(location=[np.mean(true_lats_array), np.mean(true_lons_array)], zoom_start=5)
 
     # Истинная траектория
     folium.PolyLine(
-        list(zip(true_lats, true_lons)), color="green", weight=3, opacity=0.8, tooltip="Истинная траектория"
+        list(zip(true_lats_array, true_lons_array)), color="green", weight=3, opacity=0.8, tooltip="Истинная траектория"
     ).add_to(m)
 
     # Предсказанная траектория
     folium.PolyLine(
-        list(zip(pred_lats, pred_lons)), color="red", weight=3, opacity=0.8, tooltip="Предсказанная траектория"
+        list(zip(pred_lats_array, pred_lons_array)),
+        color="red",
+        weight=3,
+        opacity=0.8,
+        tooltip="Предсказанная траектория",
     ).add_to(m)
 
     # Добавляем точки траектории с информацией
-    for i in range(len(true_lats)):
+    for i in range(len(true_lats_array)):
         category, color = get_error_category(errors_km[i])
 
         # Создаем контент всплывающего окна
         popup_html = create_popup_html(
             i,
-            true_lats[i],
-            true_lons[i],
-            pred_lats[i],
-            pred_lons[i],
+            true_lats_array[i],
+            true_lons_array[i],
+            pred_lats_array[i],
+            pred_lons_array[i],
             errors_km[i],
             displacements_km[i],
             0,
-            predictions[i, 0],
-            predictions[i, 1],
+            0,  # dlat_pred
+            0,  # dlon_pred
         )
 
         # Точка истинной траектории
         folium.CircleMarker(
-            location=[true_lats[i], true_lons[i]],
+            location=[true_lats_array[i], true_lons_array[i]],
             radius=6,
             color=color,
             fill=True,
@@ -262,7 +328,7 @@ def plot_trajectory(model: Any, X: pd.DataFrame, y: pd.DataFrame, cyclone_id: st
 
         # Точка предсказанной траектории
         folium.CircleMarker(
-            location=[pred_lats[i], pred_lons[i]],
+            location=[pred_lats_array[i], pred_lons_array[i]],
             radius=4,
             color="red",
             fill=True,
@@ -273,29 +339,54 @@ def plot_trajectory(model: Any, X: pd.DataFrame, y: pd.DataFrame, cyclone_id: st
 
     # Маркеры начала/конца
     folium.Marker(
-        [true_lats[0], true_lons[0]], popup="Начало траектории", icon=folium.Icon(color="blue", icon="play")
+        [true_lats_array[0], true_lons_array[0]], popup="Начало траектории", icon=folium.Icon(color="blue", icon="play")
     ).add_to(m)
 
     folium.Marker(
-        [true_lats[-1], true_lons[-1]], popup="Конец (истинный)", icon=folium.Icon(color="green", icon="stop")
+        [true_lats_array[-1], true_lons_array[-1]],
+        popup="Конец (истинный)",
+        icon=folium.Icon(color="green", icon="stop"),
     ).add_to(m)
 
     folium.Marker(
-        [pred_lats[-1], pred_lons[-1]], popup="Конец (предсказанный)", icon=folium.Icon(color="red", icon="stop")
+        [pred_lats_array[-1], pred_lons_array[-1]],
+        popup="Конец (предсказанный)",
+        icon=folium.Icon(color="red", icon="stop"),
     ).add_to(m)
 
-    # Добавляем легенду
+    # Статистика
+    avg_error = np.mean(errors_km)
+    max_error = np.max(errors_km)
+
+    stats_html = f"""
+    <div style="position: fixed; 
+                top: 10px; right: 10px; width: 220px; 
+                background-color: white; border:2px solid grey; z-index:9999; 
+                font-size:11px; padding: 8px; border-radius: 5px;">
+        <h4 style="margin: 0 0 8px 0;">📊 Статистика</h4>
+        <p style="margin: 2px 0;"><strong>Средняя ошибка:</strong> {avg_error:.1f} км</p>
+        <p style="margin: 2px 0;"><strong>Максимальная ошибка:</strong> {max_error:.1f} км</p>
+        <p style="margin: 2px 0;"><strong>Количество точек:</strong> {len(errors_km)}</p>
+        <p style="margin: 2px 0;"><strong>Горизонт:</strong> {horizon_hours} ч</p>
+        <hr style="margin: 6px 0;">
+        <p style="margin: 2px 0; font-size: 10px;">🟢 &lt; 50 км | 🟠 50-100 км | 🔴 100-200 км | ⚫ &gt; 200 км</p>
+    </div>
+    """
+    m.get_root().html.add_child(folium.Element(stats_html))  # type: ignore[attr-defined]
+
+    # Легенда
     legend_html = """
     <div style="position: fixed; 
-                bottom: 50px; left: 50px; width: 200px; height: 120px; 
+                bottom: 10px; left: 10px; width: 180px; 
                 background-color: white; border:2px solid grey; z-index:9999; 
-                font-size:14px; padding: 10px">
-        <p><strong>Легенда</strong></p>
-        <p><i class="fa fa-circle" style="color:green"></i> Истинная траектория</p>
-        <p><i class="fa fa-circle" style="color:red"></i> Предсказанная траектория</p>
-        <p><i class="fa fa-circle" style="color:green"></i> Ошибка &lt; 50 км</p>
-        <p><i class="fa fa-circle" style="color:orange"></i> Ошибка 50-100 км</p>
-        <p><i class="fa fa-circle" style="color:red"></i> Ошибка &gt; 100 км</p>
+                font-size:11px; padding: 8px; border-radius: 5px;">
+        <h4 style="margin: 0 0 6px 0;">🎯 Траектория циклона</h4>
+        <p style="margin: 2px 0;"><span style="color:green;">━━━</span> Истинная траектория</p>
+        <p style="margin: 2px 0;"><span style="color:red;">━━━</span> Предсказанная траектория</p>
+        <p style="margin: 2px 0;">🟢 Точки с ошибкой &lt; 50 км</p>
+        <p style="margin: 2px 0;">🟠 Точки с ошибкой 50-100 км</p>
+        <p style="margin: 2px 0;">🔴 Точки с ошибкой 100-200 км</p>
+        <p style="margin: 2px 0;">⚫ Точки с ошибкой &gt; 200 км</p>
     </div>
     """
     m.get_root().html.add_child(folium.Element(legend_html))  # type: ignore[attr-defined]
@@ -361,61 +452,131 @@ def plot_error_distribution(errors: np.ndarray) -> None:
 
 
 def plot_enhanced_trajectory(
-    model: Any, X: pd.DataFrame, y: pd.DataFrame, cyclone_id: str, include_timestamps: bool = True
+    pipeline: Any, cyclone_data: pd.DataFrame, cyclone_id: str, include_timestamps: bool = True, horizon_hours: int = 24
 ) -> None:
     """
     Расширенная визуализация траектории с временными метками и детальной информацией.
 
     Параметры:
     -----------
-    model : Any
-        Обученная модель с методом predict
-    X : pd.DataFrame
-        Датафрейм входных признаков
-    y : pd.DataFrame
-        Датафрейм целевых значений
+    pipeline : Any
+        ONNX Inference Pipeline с методом predict
+    cyclone_data : pd.DataFrame
+        Датафрейм с сырыми данными циклонов
     cyclone_id : str
         ID циклона для визуализации
     include_timestamps : bool
         Включать ли временные метки в визуализацию
+    horizon_hours : int
+        Горизонт прогноза в часах (6, 12, 24, 48)
     """
-    # Фильтруем данные для cyclone_id
-    cyclone_data = X[X["intl_id"] == cyclone_id].copy()
-    if len(cyclone_data) == 0:
+    # Проверяем, что cyclone_id является строкой
+    cyclone_id = str(cyclone_id)
+
+    # Фильтруем данные для cyclone_id с безопасной проверкой
+    try:
+        cyclone_subset = cyclone_data[cyclone_data["intl_id"].astype(str) == cyclone_id].copy()
+    except (KeyError, AttributeError) as e:
+        print(f"Предупреждение: проблема с фильтрацией по intl_id: {e}")
+        print(f"Доступные колонки: {list(cyclone_data.columns)}")
+        raise ValueError(f"Не удалось отфильтровать данные для циклона {cyclone_id}")
+
+    if len(cyclone_subset) == 0:
         raise ValueError(f"Циклон с ID {cyclone_id} не найден")
 
-    # Извлекаем координаты
-    true_lats, true_lons = extract_coordinates_from_dataframe(cyclone_data)
+    # Сортируем данные по времени
+    cyclone_subset = cyclone_subset.sort_values("analysis_time").reset_index(drop=True)
 
-    # Получаем предсказания
-    predictions = model.predict(cyclone_data)
-    pred_lats = true_lats + predictions[:, 0]
-    pred_lons = true_lons + predictions[:, 1]
+    # Делаем предсказание для каждой точки отдельно
+    true_lats: list[float] = []
+    true_lons: list[float] = []
+    pred_lats: list[float] = []
+    pred_lons: list[float] = []
+    timestamps = []
+
+    for i in range(len(cyclone_subset)):
+        # Берем срез данных до текущей точки (включая её)
+        current_slice = cyclone_subset.iloc[: i + 1].copy()
+
+        try:
+            # Получаем предсказание для текущего среза
+            prediction = pipeline.predict(current_slice, horizon_hours=horizon_hours)
+
+            if len(prediction) > 0:
+                # Берем последнее предсказание (для текущей точки)
+                last_pred = prediction.iloc[-1]
+
+                # Истинные координаты (текущая точка)
+                true_lat = last_pred["lat_deg"]
+                true_lon = last_pred["lon_deg"]
+
+                # Предсказанные координаты
+                pred_lat = last_pred["lat_pred"]
+                pred_lon = last_pred["lon_pred"]
+
+                true_lats.append(true_lat)
+                true_lons.append(true_lon)
+                pred_lats.append(pred_lat)
+                pred_lons.append(pred_lon)
+                timestamps.append(cyclone_subset.iloc[i]["analysis_time"])
+            else:
+                # Если не удалось получить предсказание, используем текущие координаты
+                current_point = cyclone_subset.iloc[i]
+                true_lats.append(current_point["lat_deg"])
+                true_lons.append(current_point["lon_deg"])
+                pred_lats.append(current_point["lat_deg"])
+                pred_lons.append(current_point["lon_deg"])
+                timestamps.append(current_point["analysis_time"])
+
+        except Exception as e:
+            # Если не удалось получить предсказание, используем текущие координаты
+            current_point = cyclone_subset.iloc[i]
+            true_lats.append(current_point["lat_deg"])
+            true_lons.append(current_point["lon_deg"])
+            pred_lats.append(current_point["lat_deg"])
+            pred_lons.append(current_point["lon_deg"])
+            timestamps.append(current_point["analysis_time"])
+
+    if len(true_lats) == 0:
+        raise ValueError(f"Не удалось получить предсказания для циклона {cyclone_id}")
+
+    # Convert to numpy arrays
+    true_lats_array = np.array(true_lats)
+    true_lons_array = np.array(true_lons)
+    pred_lats_array = np.array(pred_lats)
+    pred_lons_array = np.array(pred_lons)
 
     # Вычисляем метрики
-    errors_km, displacements_km, directions = calculate_error_metrics(true_lats, true_lons, pred_lats, pred_lons)
+    errors_km, displacements_km, directions_deg = calculate_error_metrics(
+        true_lats_array, true_lons_array, pred_lats_array, pred_lons_array
+    )
 
     # Создаем карту
-    m = folium.Map(location=[np.mean(true_lats), np.mean(true_lons)], zoom_start=5, tiles="OpenStreetMap")
+    m = folium.Map(location=[np.mean(true_lats_array), np.mean(true_lons_array)], zoom_start=5)
 
-    # Добавляем траектории
+    # Истинная траектория
     folium.PolyLine(
-        list(zip(true_lats, true_lons)), color="darkgreen", weight=4, opacity=0.9, tooltip="Истинная траектория"
+        list(zip(true_lats_array, true_lons_array)), color="green", weight=3, opacity=0.8, tooltip="Истинная траектория"
     ).add_to(m)
 
+    # Предсказанная траектория
     folium.PolyLine(
-        list(zip(pred_lats, pred_lons)), color="darkred", weight=4, opacity=0.9, tooltip="Предсказанная траектория"
+        list(zip(pred_lats_array, pred_lons_array)),
+        color="red",
+        weight=3,
+        opacity=0.8,
+        tooltip="Предсказанная траектория",
     ).add_to(m)
 
-    # Добавляем точки с детальной информацией
-    for i in range(len(true_lats)):
+    # Добавляем точки траектории с детальной информацией
+    for i in range(len(true_lats_array)):
         category, color = get_error_category(errors_km[i])
 
-        # Получаем информацию о времени, если доступна
+        # Формируем информацию о времени
         timestamp_info = ""
-        if include_timestamps and "timestamp" in cyclone_data.columns:
+        if include_timestamps and i < len(timestamps):
             try:
-                timestamp = cyclone_data.iloc[i]["timestamp"]
+                timestamp = timestamps[i]
                 if isinstance(timestamp, str):
                     timestamp_info = f"<p><strong>Время:</strong> {timestamp}</p>"
                 elif hasattr(timestamp, "strftime"):
@@ -423,93 +584,76 @@ def plot_enhanced_trajectory(
             except:
                 pass
 
-        # Создаем детальное всплывающее окно
+        # Создаем контент всплывающего окна
         popup_html = create_popup_html(
             i,
-            true_lats[i],
-            true_lons[i],
-            pred_lats[i],
-            pred_lons[i],
+            true_lats_array[i],
+            true_lons_array[i],
+            pred_lats_array[i],
+            pred_lons_array[i],
             errors_km[i],
             displacements_km[i],
-            directions[i],
-            predictions[i, 0],
-            predictions[i, 1],
+            directions_deg[i],
+            0,  # dlat_pred
+            0,  # dlon_pred
             timestamp_info,
         )
 
         # Точка истинной траектории
         folium.CircleMarker(
-            location=[true_lats[i], true_lons[i]],
-            radius=8,
+            location=[true_lats_array[i], true_lons_array[i]],
+            radius=6,
             color=color,
             fill=True,
             fillColor=color,
-            fillOpacity=0.8,
-            weight=2,
+            fillOpacity=0.7,
             popup=folium.Popup(popup_html, max_width=300),
             tooltip=f"Точка {i+1}: {category} ({errors_km[i]:.1f} км)",
         ).add_to(m)
 
-        # Точка предсказания
+        # Точка предсказанной траектории
         folium.CircleMarker(
-            location=[pred_lats[i], pred_lons[i]],
-            radius=5,
+            location=[pred_lats_array[i], pred_lons_array[i]],
+            radius=4,
             color="red",
             fill=True,
             fillColor="red",
-            fillOpacity=0.6,
-            weight=1,
+            fillOpacity=0.5,
             tooltip=f"Предсказание {i+1}",
         ).add_to(m)
 
-        # Линия ошибки для больших ошибок
-        if errors_km[i] > 50:
-            folium.PolyLine(
-                locations=[[true_lats[i], true_lons[i]], [pred_lats[i], pred_lons[i]]],
-                color="gray",
-                weight=1,
-                opacity=0.5,
-                dash_array="5,5",
-                tooltip=f"Ошибка: {errors_km[i]:.1f} км",
-            ).add_to(m)
-
-    # Специальные маркеры
+    # Маркеры начала/конца
     folium.Marker(
-        [true_lats[0], true_lons[0]],
-        popup="🚀 Начало траектории",
-        icon=folium.Icon(color="blue", icon="play", prefix="fa"),
+        [true_lats_array[0], true_lons_array[0]], popup="Начало траектории", icon=folium.Icon(color="blue", icon="play")
     ).add_to(m)
 
     folium.Marker(
-        [true_lats[-1], true_lons[-1]],
-        popup="✅ Конец (истинный)",
-        icon=folium.Icon(color="green", icon="stop", prefix="fa"),
+        [true_lats_array[-1], true_lons_array[-1]],
+        popup="Конец (истинный)",
+        icon=folium.Icon(color="green", icon="stop"),
     ).add_to(m)
 
     folium.Marker(
-        [pred_lats[-1], pred_lons[-1]],
-        popup="🎯 Конец (предсказанный)",
-        icon=folium.Icon(color="red", icon="stop", prefix="fa"),
+        [pred_lats_array[-1], pred_lons_array[-1]],
+        popup="Конец (предсказанный)",
+        icon=folium.Icon(color="red", icon="stop"),
     ).add_to(m)
 
     # Статистика
     avg_error = np.mean(errors_km)
     max_error = np.max(errors_km)
-    min_error = np.min(errors_km)
 
     stats_html = f"""
     <div style="position: fixed; 
-                top: 10px; right: 10px; width: 250px; 
+                top: 10px; right: 10px; width: 220px; 
                 background-color: white; border:2px solid grey; z-index:9999; 
-                font-size:12px; padding: 10px; border-radius: 5px;">
-        <h4 style="margin: 0 0 10px 0;">📊 Статистика ошибок</h4>
+                font-size:11px; padding: 8px; border-radius: 5px;">
+        <h4 style="margin: 0 0 8px 0;">📊 Статистика</h4>
         <p style="margin: 2px 0;"><strong>Средняя ошибка:</strong> {avg_error:.1f} км</p>
         <p style="margin: 2px 0;"><strong>Максимальная ошибка:</strong> {max_error:.1f} км</p>
-        <p style="margin: 2px 0;"><strong>Минимальная ошибка:</strong> {min_error:.1f} км</p>
         <p style="margin: 2px 0;"><strong>Количество точек:</strong> {len(errors_km)}</p>
-        <hr style="margin: 8px 0;">
-        <p style="margin: 2px 0; font-size: 10px;">Цвета точек:</p>
+        <p style="margin: 2px 0;"><strong>Горизонт:</strong> {horizon_hours} ч</p>
+        <hr style="margin: 6px 0;">
         <p style="margin: 2px 0; font-size: 10px;">🟢 &lt; 50 км | 🟠 50-100 км | 🔴 100-200 км | ⚫ &gt; 200 км</p>
     </div>
     """
@@ -518,17 +662,16 @@ def plot_enhanced_trajectory(
     # Легенда
     legend_html = """
     <div style="position: fixed; 
-                bottom: 10px; left: 10px; width: 200px; 
+                bottom: 10px; left: 10px; width: 180px; 
                 background-color: white; border:2px solid grey; z-index:9999; 
-                font-size:12px; padding: 10px; border-radius: 5px;">
-        <h4 style="margin: 0 0 8px 0;">🗺️ Легенда</h4>
-        <p style="margin: 2px 0;"><span style="color:darkgreen;">━━━</span> Истинная траектория</p>
-        <p style="margin: 2px 0;"><span style="color:darkred;">━━━</span> Предсказанная траектория</p>
+                font-size:11px; padding: 8px; border-radius: 5px;">
+        <h4 style="margin: 0 0 6px 0;">🎯 Расширенная траектория</h4>
+        <p style="margin: 2px 0;"><span style="color:green;">━━━</span> Истинная траектория</p>
+        <p style="margin: 2px 0;"><span style="color:red;">━━━</span> Предсказанная траектория</p>
         <p style="margin: 2px 0;">🟢 Точки с ошибкой &lt; 50 км</p>
         <p style="margin: 2px 0;">🟠 Точки с ошибкой 50-100 км</p>
         <p style="margin: 2px 0;">🔴 Точки с ошибкой 100-200 км</p>
         <p style="margin: 2px 0;">⚫ Точки с ошибкой &gt; 200 км</p>
-        <p style="margin: 2px 0;">🔴 Малые точки - предсказания</p>
     </div>
     """
     m.get_root().html.add_child(folium.Element(legend_html))  # type: ignore[attr-defined]
@@ -537,48 +680,107 @@ def plot_enhanced_trajectory(
 
 
 def plot_animated_trajectory(
-    model: Any, X: pd.DataFrame, y: pd.DataFrame, cyclone_id: str, animation_speed: int = 1000
+    pipeline: Any, cyclone_data: pd.DataFrame, cyclone_id: str, animation_speed: int = 1000, horizon_hours: int = 24
 ) -> None:
     """
-    Создает анимированную визуализацию траектории.
+    Создает анимированную визуализацию траектории с использованием inference pipeline.
 
     Параметры:
     -----------
-    model : Any
-        Обученная модель с методом predict
-    X : pd.DataFrame
-        Датафрейм входных признаков
-    y : pd.DataFrame
-        Датафрейм целевых значений
+    pipeline : Any
+        ONNX Inference Pipeline с методом predict
+    cyclone_data : pd.DataFrame
+        Датафрейм с сырыми данными циклонов
     cyclone_id : str
         ID циклона для визуализации
     animation_speed : int
         Скорость анимации в миллисекундах
+    horizon_hours : int
+        Горизонт прогноза в часах (6, 12, 24, 48)
     """
-    # Фильтруем данные для cyclone_id
-    cyclone_data = X[X["intl_id"] == cyclone_id].copy()
-    if len(cyclone_data) == 0:
+    # Проверяем, что cyclone_id является строкой
+    cyclone_id = str(cyclone_id)
+
+    # Фильтруем данные для cyclone_id с безопасной проверкой
+    try:
+        cyclone_subset = cyclone_data[cyclone_data["intl_id"].astype(str) == cyclone_id].copy()
+    except (KeyError, AttributeError) as e:
+        print(f"Предупреждение: проблема с фильтрацией по intl_id: {e}")
+        print(f"Доступные колонки: {list(cyclone_data.columns)}")
+        raise ValueError(f"Не удалось отфильтровать данные для циклона {cyclone_id}")
+
+    if len(cyclone_subset) == 0:
         raise ValueError(f"Циклон с ID {cyclone_id} не найден")
 
-    # Извлекаем координаты
-    true_lats, true_lons = extract_coordinates_from_dataframe(cyclone_data)
+    # Сортируем данные по времени
+    cyclone_subset = cyclone_subset.sort_values("analysis_time").reset_index(drop=True)
 
-    # Получаем предсказания
-    predictions = model.predict(cyclone_data)
-    pred_lats = true_lats + predictions[:, 0]
-    pred_lons = true_lons + predictions[:, 1]
+    # Делаем предсказание для каждой точки отдельно
+    true_lats: list[float] = []
+    true_lons: list[float] = []
+    pred_lats: list[float] = []
+    pred_lons: list[float] = []
+
+    for i in range(len(cyclone_subset)):
+        # Берем срез данных до текущей точки (включая её)
+        current_slice = cyclone_subset.iloc[: i + 1].copy()
+
+        try:
+            # Получаем предсказание для текущего среза
+            prediction = pipeline.predict(current_slice, horizon_hours=horizon_hours)
+
+            if len(prediction) > 0:
+                # Берем последнее предсказание (для текущей точки)
+                last_pred = prediction.iloc[-1]
+
+                # Истинные координаты (текущая точка)
+                true_lat = last_pred["lat_deg"]
+                true_lon = last_pred["lon_deg"]
+
+                # Предсказанные координаты
+                pred_lat = last_pred["lat_pred"]
+                pred_lon = last_pred["lon_pred"]
+
+                true_lats.append(true_lat)
+                true_lons.append(true_lon)
+                pred_lats.append(pred_lat)
+                pred_lons.append(pred_lon)
+            else:
+                # Если не удалось получить предсказание, используем текущие координаты
+                current_point = cyclone_subset.iloc[i]
+                true_lats.append(current_point["lat_deg"])
+                true_lons.append(current_point["lon_deg"])
+                pred_lats.append(current_point["lat_deg"])
+                pred_lons.append(current_point["lon_deg"])
+
+        except Exception as e:
+            # Если не удалось получить предсказание, используем текущие координаты
+            current_point = cyclone_subset.iloc[i]
+            true_lats.append(current_point["lat_deg"])
+            true_lons.append(current_point["lon_deg"])
+            pred_lats.append(current_point["lat_deg"])
+            pred_lons.append(current_point["lon_deg"])
+
+    if len(true_lats) == 0:
+        raise ValueError(f"Не удалось получить предсказания для циклона {cyclone_id}")
+
+    # Convert to numpy arrays
+    true_lats_array = np.array(true_lats)
+    true_lons_array = np.array(true_lons)
+    pred_lats_array = np.array(pred_lats)
+    pred_lons_array = np.array(pred_lons)
 
     # Вычисляем ошибки
-    errors_km, _, _ = calculate_error_metrics(true_lats, true_lons, pred_lats, pred_lons)
+    errors_km, _, _ = calculate_error_metrics(true_lats_array, true_lons_array, pred_lats_array, pred_lons_array)
 
     # Создаем карту
     from folium import plugins
 
-    m = folium.Map(location=[np.mean(true_lats), np.mean(true_lons)], zoom_start=5, tiles="OpenStreetMap")
+    m = folium.Map(location=[np.mean(true_lats_array), np.mean(true_lons_array)], zoom_start=5, tiles="OpenStreetMap")
 
     # Подготавливаем данные траектории для анимации
-    true_trajectory = [[lat, lon] for lat, lon in zip(true_lats, true_lons)]
-    pred_trajectory = [[lat, lon] for lat, lon in zip(pred_lats, pred_lons)]
+    true_trajectory = [[lat, lon] for lat, lon in zip(true_lats_array, true_lons_array)]
+    pred_trajectory = [[lat, lon] for lat, lon in zip(pred_lats_array, pred_lons_array)]
 
     # Добавляем анимированные пути
     plugins.AntPath(
@@ -600,14 +802,14 @@ def plot_animated_trajectory(
     ).add_to(m)
 
     # Добавляем статичные точки с информацией
-    for i in range(len(true_lats)):
+    for i in range(len(true_lats_array)):
         category, color = get_error_category(errors_km[i])
 
         # Получаем информацию о времени
         timestamp_info = ""
-        if "timestamp" in cyclone_data.columns:
+        if i < len(cyclone_subset):
             try:
-                timestamp = cyclone_data.iloc[i]["timestamp"]
+                timestamp = cyclone_subset.iloc[i]["analysis_time"]
                 if isinstance(timestamp, str):
                     timestamp_info = f"<p><strong>Время:</strong> {timestamp}</p>"
                 elif hasattr(timestamp, "strftime"):
@@ -618,21 +820,21 @@ def plot_animated_trajectory(
         # Создаем всплывающее окно
         popup_html = create_popup_html(
             i,
-            true_lats[i],
-            true_lons[i],
-            pred_lats[i],
-            pred_lons[i],
+            true_lats_array[i],
+            true_lons_array[i],
+            pred_lats_array[i],
+            pred_lons_array[i],
             errors_km[i],
             0,
             0,
-            predictions[i, 0],
-            predictions[i, 1],
+            0,  # dlat_pred
+            0,  # dlon_pred
             timestamp_info,
         )
 
         # Точка истинной траектории
         folium.CircleMarker(
-            location=[true_lats[i], true_lons[i]],
+            location=[true_lats_array[i], true_lons_array[i]],
             radius=6,
             color=color,
             fill=True,
@@ -645,19 +847,19 @@ def plot_animated_trajectory(
 
     # Специальные маркеры
     folium.Marker(
-        [true_lats[0], true_lons[0]],
+        [true_lats_array[0], true_lons_array[0]],
         popup="🚀 Начало траектории",
         icon=folium.Icon(color="blue", icon="play", prefix="fa"),
     ).add_to(m)
 
     folium.Marker(
-        [true_lats[-1], true_lons[-1]],
+        [true_lats_array[-1], true_lons_array[-1]],
         popup="✅ Конец (истинный)",
         icon=folium.Icon(color="green", icon="stop", prefix="fa"),
     ).add_to(m)
 
     folium.Marker(
-        [pred_lats[-1], pred_lons[-1]],
+        [pred_lats_array[-1], pred_lons_array[-1]],
         popup="🎯 Конец (предсказанный)",
         icon=folium.Icon(color="red", icon="stop", prefix="fa"),
     ).add_to(m)
@@ -675,6 +877,7 @@ def plot_animated_trajectory(
         <p style="margin: 2px 0;"><strong>Средняя ошибка:</strong> {avg_error:.1f} км</p>
         <p style="margin: 2px 0;"><strong>Максимальная ошибка:</strong> {max_error:.1f} км</p>
         <p style="margin: 2px 0;"><strong>Количество точек:</strong> {len(errors_km)}</p>
+        <p style="margin: 2px 0;"><strong>Горизонт:</strong> {horizon_hours} ч</p>
         <hr style="margin: 6px 0;">
         <p style="margin: 2px 0; font-size: 10px;">🟢 &lt; 50 км | 🟠 50-100 км | 🔴 100-200 км | ⚫ &gt; 200 км</p>
     </div>
@@ -699,6 +902,36 @@ def plot_animated_trajectory(
     m.get_root().html.add_child(folium.Element(legend_html))  # type: ignore[attr-defined]
 
     display(m)
+
+
+def create_inference_pipeline(
+    model_path: str, pipeline_type: str = "fast", sequence_config: dict | None = None
+) -> ONNXInferencePipeline:
+    """
+    Создает inference pipeline для визуализации.
+
+    Параметры:
+    -----------
+    model_path : str
+        Путь к ONNX модели
+    pipeline_type : str
+        Тип pipeline: "fast", "memory_efficient", "gpu"
+    sequence_config : dict | None
+        Конфигурация последовательностей
+
+    Возвращает:
+    --------
+    ONNXInferencePipeline
+        Готовый к использованию inference pipeline
+    """
+    if pipeline_type == "fast":
+        return ONNXInferencePipelineFactory.create_fast_inference(model_path, sequence_config)
+    elif pipeline_type == "memory_efficient":
+        return ONNXInferencePipelineFactory.create_memory_efficient(model_path, sequence_config)
+    elif pipeline_type == "gpu":
+        return ONNXInferencePipelineFactory.create_gpu_inference(model_path, sequence_config)
+    else:
+        raise ValueError(f"Неизвестный тип pipeline: {pipeline_type}. Доступные: fast, memory_efficient, gpu")
 
 
 def print_sequence_table(

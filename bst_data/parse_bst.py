@@ -7,7 +7,6 @@
     python parse_bst.py bst_all.txt --csv out.csv --md schema.md
 """
 
-
 import argparse
 import logging
 from datetime import datetime

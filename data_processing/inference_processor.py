@@ -1,10 +1,3 @@
-"""
-Специальный процессор данных для инференса в продакшене.
-
-Этот модуль содержит InferenceDataProcessor - упрощенную версию DataProcessor,
-оптимизированную для инференса без параметров обучения.
-"""
-
 import pandas as pd
 
 from .base_processor import BaseDataProcessor

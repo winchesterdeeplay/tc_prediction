@@ -4,7 +4,6 @@ import onnxruntime as ort
 import pandas as pd
 import pytorch_lightning as pl
 import torch
-from sklearn.utils.class_weight import compute_sample_weight
 from torch import Tensor, nn
 from torch.nn import Module
 from typing import Self
@@ -96,8 +95,6 @@ class SimpleGRUModel(Module):
             bidirectional=False,
         )
 
-
-
         # Dropout после GRU
         self.dropout = nn.Dropout(dropout)
 
@@ -150,7 +147,6 @@ class SimpleGRUModel(Module):
         batch_size = gru_out.size(0)
         indices = torch.arange(batch_size, device=gru_out.device)
         sequence_features = gru_out[indices, seq_lengths - 1]
-
 
         # Dropout для последовательностных фич
         sequence_features = self.dropout(sequence_features)
@@ -435,37 +431,6 @@ def _evaluate(model: "NNLatLon", loader: Any, criterion: Any, device: torch.devi
     return total / len(loader)
 
 
-def calculate_sample_weights(X: pd.DataFrame, strategy: str = "balanced_horizon") -> np.ndarray:
-    """
-    Вычисляет веса для сэмплов на основе выбранной стратегии.
-
-    Parameters
-    ----------
-    X : pd.DataFrame
-        Датафрейм с данными
-    strategy : str
-        Стратегия взвешивания:
-        - "balanced_horizon": балансировка по горизонту прогноза
-        - "balanced_intensity": балансировка по интенсивности циклона
-
-    Returns
-    -------
-    np.ndarray
-        Веса для каждого сэмпла
-    """
-    feature_cfg = FeatureConfig()
-
-    if strategy == "balanced_horizon":
-        # Balance by forecast horizon
-        weights: np.ndarray = compute_sample_weight(class_weight="balanced", y=X[feature_cfg.target_time_column])
-    elif strategy == "balanced_intensity":
-        # Balance by cyclone intensity
-        weights = compute_sample_weight(class_weight="balanced", y=X["central_pressure_hpa"])
-    else:
-        raise ValueError(f"Unknown strategy: {strategy}")
-    return weights
-
-
 class LightningCycloneModel(pl.LightningModule):
     """LightningModule that wraps NNLatLon and handles optimisation/logging."""
 
@@ -539,7 +504,9 @@ class LightningCycloneModel(pl.LightningModule):
             ),
         )
 
-    def forward(self, sequences: torch.Tensor, static_features: torch.Tensor, seq_lengths: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, sequences: torch.Tensor, static_features: torch.Tensor, seq_lengths: torch.Tensor
+    ) -> torch.Tensor:
         return self.net(sequences, static_features, seq_lengths)  # type: ignore[no-any-return]
 
     def export_to_onnx(
@@ -1052,5 +1019,3 @@ class LightningCycloneModel(pl.LightningModule):
                 "frequency": 1,
             },
         }
-
-

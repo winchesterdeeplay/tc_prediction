@@ -78,8 +78,8 @@ class SequenceConfig:
     max_history_length: int | None = None
 
     def __post_init__(self) -> None:
-        if self.min_history_length < 2:
-            raise ValueError("min_history_length должен быть >= 2 для корректного " "вычисления производных фич")
+        if self.min_history_length < 1:
+            raise ValueError("min_history_length должен быть >= 1 для корректного " "вычисления производных фич")
 
         if self.max_history_length is not None and self.max_history_length < self.min_history_length:
             raise ValueError("max_history_length должен быть >= min_history_length")

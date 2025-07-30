@@ -168,4 +168,11 @@ def collate_variable_length(batch: Any, shuffle_sequences: bool = False, shuffle
     weights_tensor = torch.stack(weights)
     horizon_hours_tensor = torch.stack(horizon_hours)
 
-    return padded_sequences, static_features_tensor, targets_tensor, weights_tensor, horizon_hours_tensor, sequence_lengths
+    return (
+        padded_sequences,
+        static_features_tensor,
+        targets_tensor,
+        weights_tensor,
+        horizon_hours_tensor,
+        sequence_lengths,
+    )
