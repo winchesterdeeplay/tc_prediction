@@ -43,13 +43,13 @@ class SimpleTransformerModel(Module):
 
         # Проекция входных фич в hidden_dim
         self.input_projection = nn.Linear(sequence_feature_dim, hidden_dim)
-        
-        # Learnable Positional Encoding
-        self.pos_encoding = nn.Parameter(torch.randn(max_seq_length, hidden_dim))
-        
+
+        # # Learnable Positional Encoding
+        # self.pos_encoding = nn.Parameter(torch.randn(max_seq_length, hidden_dim))
+
         # Sinusoidal Positional Encoding
-        # self.register_buffer('pos_encoding', self._create_sinusoidal_encoding(max_seq_length, hidden_dim))
-        
+        self.register_buffer("pos_encoding", self._create_sinusoidal_encoding(max_seq_length, hidden_dim))
+
         # Transformer Encoder слои
         encoder_layer = TransformerEncoderLayer(
             d_model=hidden_dim,
@@ -57,18 +57,24 @@ class SimpleTransformerModel(Module):
             dim_feedforward=hidden_dim * 4,
             dropout=dropout,
             batch_first=True,
-            activation='relu'
+            activation="relu",
+            norm_first=True,  # Применяем LayerNorm перед attention и feedforward
         )
         self.transformer_encoder = TransformerEncoder(encoder_layer, num_layers=num_layers, enable_nested_tensor=False)
-        
+
+        # Дополнительный LayerNorm после Transformer
+        self.post_transformer_norm = nn.LayerNorm(hidden_dim)
+
         self.dropout = nn.Dropout(dropout)
 
         # Голова для статических фич
         self.static_head = nn.Sequential(
             nn.Linear(static_feature_dim, hidden_dim // 2),
+            nn.LayerNorm(hidden_dim // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim // 2, hidden_dim // 2),
+            nn.LayerNorm(hidden_dim // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
         )
@@ -77,6 +83,7 @@ class SimpleTransformerModel(Module):
         combined_dim = hidden_dim + hidden_dim // 2
         self.combined_head = nn.Sequential(
             nn.Linear(combined_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
         )
@@ -87,21 +94,21 @@ class SimpleTransformerModel(Module):
     def _create_sinusoidal_encoding(self, max_len: int, d_model: int) -> torch.Tensor:
         """
         Создает sinusoidal positional encoding.
-        
+
         Args:
             max_len: Максимальная длина последовательности
             d_model: Размерность модели
-            
+
         Returns:
             Positional encoding tensor [max_len, d_model]
         """
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-torch.log(torch.tensor(10000.0)) / d_model))
-        
+
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        
+
         return pe
 
     def forward(
@@ -125,24 +132,27 @@ class SimpleTransformerModel(Module):
             Предсказанные изменения координат (dlat, dlon)
         """
         batch_size, seq_len, feature_dim = sequences.shape
-        
+
         # Проекция входных фич
         x = self.input_projection(sequences)  # [batch_size, seq_len, hidden_dim]
-        
+
         # Добавляем positional encoding
-        pos_enc = self.pos_encoding[:seq_len, :].unsqueeze(0).expand(batch_size, -1, -1)
+        pos_enc = self.pos_encoding[:seq_len, :].unsqueeze(0).expand(batch_size, -1, -1)  # type: ignore[index]
         x = x + pos_enc
-        
+
         # Создаем маску для padding (True для padding токенов)
         mask = torch.arange(seq_len, device=sequences.device).unsqueeze(0) >= seq_lengths.unsqueeze(1)
-        
+
         # Transformer Encoder проход
         transformer_out = self.transformer_encoder(x, src_key_padding_mask=mask)
-        
+
+        # Применяем LayerNorm после Transformer
+        transformer_out = self.post_transformer_norm(transformer_out)
+
         # Извлекаем последние состояния для каждой последовательности
         indices = torch.arange(batch_size, device=transformer_out.device)
         sequence_features = transformer_out[indices, seq_lengths - 1]
-        
+
         # Dropout для последовательностных фич
         sequence_features = self.dropout(sequence_features)
 
@@ -159,9 +169,6 @@ class SimpleTransformerModel(Module):
         return self.output_layer(combined_out)  # type: ignore[no-any-return]
 
 
-
-
-
 class NNLatLon(Module):
     """
     Neural Network model for predicting cyclone trajectory changes.
@@ -170,10 +177,18 @@ class NNLatLon(Module):
     """
 
     def __init__(
-        self, sequence_feature_dim: int, static_feature_dim: int = 5, hidden_dim: int = 128, num_layers: int = 2, num_heads: int = 8, output_dim: int = 2
+        self,
+        sequence_feature_dim: int,
+        static_feature_dim: int = 5,
+        hidden_dim: int = 128,
+        num_layers: int = 2,
+        num_heads: int = 8,
+        output_dim: int = 2,
     ):
         super().__init__()
-        self.model = SimpleTransformerModel(sequence_feature_dim, static_feature_dim, hidden_dim, num_layers, num_heads, output_dim=output_dim)
+        self.model = SimpleTransformerModel(
+            sequence_feature_dim, static_feature_dim, hidden_dim, num_layers, num_heads, output_dim=output_dim
+        )
 
     def forward(
         self, sequences: torch.Tensor, static_features: torch.Tensor, seq_lengths: torch.Tensor
@@ -542,9 +557,9 @@ class LightningCycloneModel(pl.LightningModule):
             }
         else:
             dynamic_axes_config = None
-            
+
         print("🔄 Начинаем экспорт модели в ONNX...")
-        
+
         torch.onnx.export(
             self.net,
             (dummy_sequences, dummy_static, dummy_lengths),
@@ -558,7 +573,7 @@ class LightningCycloneModel(pl.LightningModule):
             verbose=True,
             keep_initializers_as_inputs=False,
             export_modules_as_functions=False,
-            dynamo=True
+            dynamo=True,
         )
 
         print(f"✅ Модель успешно экспортирована в ONNX: {filepath}")
