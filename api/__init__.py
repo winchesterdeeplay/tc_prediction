@@ -1,4 +1,5 @@
-from .models import CycloneData, Prediction, PredictionRequest, PredictionResponse, ModelInfoResponse
+from .models import (CycloneData, ModelInfoResponse, Prediction,
+                     PredictionRequest, PredictionResponse)
 from .service import CyclonePredictionService
 
 __all__ = [

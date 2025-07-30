@@ -13,3 +13,4 @@ old_notebooks/
 .ruff_cache/
 lightning_logs/
 *.pkl
+api.log

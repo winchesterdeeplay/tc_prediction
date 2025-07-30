@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Any
-from pydantic import BaseModel, Field
+
 import pandas as pd
+from pydantic import BaseModel, Field
 
 
 class CycloneData(BaseModel):

@@ -4,13 +4,8 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
-from core.constants import (
-    CoordinateLimits,
-    ErrorTemplates,
-    FeatureType,
-    TimeConstants,
-    ValidationMessages,
-)
+from core.constants import (CoordinateLimits, ErrorTemplates, FeatureType,
+                            TimeConstants, ValidationMessages)
 from core.coordinates import CoordinateProcessor
 
 

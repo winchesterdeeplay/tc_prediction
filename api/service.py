@@ -1,10 +1,12 @@
-import time
 import logging
-from typing import Any
+import time
 from pathlib import Path
+from typing import Any
 
 from inference import ONNXInferencePipeline, ONNXInferencePipelineFactory
-from .models import CycloneData, Prediction, cyclone_data_to_dataframe, dataframe_to_predictions, ModelInfoResponse
+
+from .models import (CycloneData, ModelInfoResponse, Prediction,
+                     cyclone_data_to_dataframe, dataframe_to_predictions)
 
 
 class CyclonePredictionService:

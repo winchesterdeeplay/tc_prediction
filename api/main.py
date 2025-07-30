@@ -1,20 +1,16 @@
-import os
 import logging
-from datetime import datetime
+import os
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Callable, Any
+from datetime import datetime
 from functools import wraps
-from fastapi import FastAPI, HTTPException, Depends, Request
+from typing import Any, AsyncGenerator, Callable
+
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from .models import (
-    PredictionRequest,
-    PredictionResponse,
-    MultipleHorizonsRequest,
-    MultipleHorizonsResponse,
-    ModelInfoResponse,
-    HealthResponse,
-)
+from .models import (HealthResponse, ModelInfoResponse,
+                     MultipleHorizonsRequest, MultipleHorizonsResponse,
+                     PredictionRequest, PredictionResponse)
 from .service import CyclonePredictionService
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

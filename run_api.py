@@ -1,7 +1,7 @@
-import os
-import sys
 import argparse
 import logging
+import os
+import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -17,7 +17,7 @@ def setup_logging(log_level: str = "INFO") -> None:
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(), logging.FileHandler("api.log")],
+        handlers=[logging.StreamHandler(), logging.FileHandler("app.log")],
     )
 
 

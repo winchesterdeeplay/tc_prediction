@@ -14,7 +14,8 @@ RUN pip install --no-cache-dir \
     pandas==2.3.1 \
     onnx==1.18.0 \
     onnxruntime==1.22.1 \
-    fsspec==2025.7.0
+    fsspec==2025.7.0 \
+    tqdm==4.67.1
 
 COPY run_api.py ./
 COPY api/ ./api/

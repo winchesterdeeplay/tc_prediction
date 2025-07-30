@@ -1,3 +1,5 @@
+from typing import Any, Self
+
 import numpy as np
 import onnx
 import onnxruntime as ort
@@ -6,24 +8,15 @@ import pytorch_lightning as pl
 import torch
 from torch import Tensor, nn
 from torch.nn import Module
-from typing import Self
-from typing import Any
 
 from core.coordinates import CoordinateProcessor
 from core.features import FeatureConfig
 
-from .losses import (
-    CombinedCycloneLoss,
-    HaversineLoss,
-    HorizonAwareCombinedCycloneLoss,
-    HorizonAwareHaversineLoss,
-    HorizonAwareNLLGaussianLoss,
-    HorizonAwareSectorLoss,
-    ImprovedHorizonAwareSectorLoss,
-    ImprovedSectorLoss,
-    NLLGaussianLoss,
-    SectorLoss,
-)
+from .losses import (CombinedCycloneLoss, HaversineLoss,
+                     HorizonAwareCombinedCycloneLoss,
+                     HorizonAwareHaversineLoss, HorizonAwareNLLGaussianLoss,
+                     HorizonAwareSectorLoss, ImprovedHorizonAwareSectorLoss,
+                     ImprovedSectorLoss, NLLGaussianLoss, SectorLoss)
 
 
 class LearnableHorizonNorm(nn.Module):

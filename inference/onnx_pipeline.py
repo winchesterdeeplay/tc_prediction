@@ -7,6 +7,7 @@ import pandas as pd
 
 from core.features import FeatureConfig
 from data_processing import InferenceDataProcessor
+from data_processing.dataset_models import SequenceConfig
 
 
 class ONNXInferencePipeline:
@@ -60,9 +61,13 @@ class ONNXInferencePipeline:
         except Exception as e:
             raise RuntimeError(f"Ошибка загрузки ONNX модели: {e}")
 
-        # Инициализация InferenceDataProcessor для продакшена
+        if isinstance(sequence_config, dict):
+            seq_config = SequenceConfig(**sequence_config)
+        else:
+            seq_config = sequence_config
+            
         self.data_processor = InferenceDataProcessor(
-            sequence_config=sequence_config,  # type: ignore
+            sequence_config=seq_config,
             validate_data=validate_data,
         )
 

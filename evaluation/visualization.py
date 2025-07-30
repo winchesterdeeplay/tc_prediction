@@ -1,4 +1,5 @@
 from typing import Any
+
 import folium
 import numpy as np
 import pandas as pd
