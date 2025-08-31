@@ -27,4 +27,5 @@ dependencies = [
     "pydantic-settings>=2.10.1",
     "onnxscript>=0.3.2",
     "mypy>=1.17.0",
+    "cartopy>=0.25.0",
 ]
