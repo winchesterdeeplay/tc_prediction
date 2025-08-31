@@ -373,7 +373,7 @@ def plot_trajectory(pipeline: Any, cyclone_data: pd.DataFrame, cyclone_id: str, 
         <p style="margin: 2px 0; font-size: 10px;">🟢 &lt; 50 км | 🟠 50-100 км | 🔴 100-200 км | ⚫ &gt; 200 км</p>
     </div>
     """
-    m.get_root().html.add_child(folium.Element(stats_html))  # type: ignore[attr-defined]
+    m.get_root().html.add_child(folium.Element(stats_html))
 
     # Легенда
     legend_html = """
@@ -390,7 +390,7 @@ def plot_trajectory(pipeline: Any, cyclone_data: pd.DataFrame, cyclone_id: str, 
         <p style="margin: 2px 0;">⚫ Точки с ошибкой &gt; 200 км</p>
     </div>
     """
-    m.get_root().html.add_child(folium.Element(legend_html))  # type: ignore[attr-defined]
+    m.get_root().html.add_child(folium.Element(legend_html))
 
     display(m)
 
@@ -658,8 +658,7 @@ def plot_enhanced_trajectory(
         <p style="margin: 2px 0; font-size: 10px;">🟢 &lt; 50 км | 🟠 50-100 км | 🔴 100-200 км | ⚫ &gt; 200 км</p>
     </div>
     """
-    m.get_root().html.add_child(folium.Element(stats_html))  # type: ignore[attr-defined]
-
+    m.get_root().html.add_child(folium.Element(stats_html))
     # Легенда
     legend_html = """
     <div style="position: fixed; 
@@ -675,7 +674,7 @@ def plot_enhanced_trajectory(
         <p style="margin: 2px 0;">⚫ Точки с ошибкой &gt; 200 км</p>
     </div>
     """
-    m.get_root().html.add_child(folium.Element(legend_html))  # type: ignore[attr-defined]
+    m.get_root().html.add_child(folium.Element(legend_html))
 
     display(m)
 
@@ -883,7 +882,7 @@ def plot_animated_trajectory(
         <p style="margin: 2px 0; font-size: 10px;">🟢 &lt; 50 км | 🟠 50-100 км | 🔴 100-200 км | ⚫ &gt; 200 км</p>
     </div>
     """
-    m.get_root().html.add_child(folium.Element(stats_html))  # type: ignore[attr-defined]
+    m.get_root().html.add_child(folium.Element(stats_html))
 
     # Легенда
     legend_html = """
@@ -900,7 +899,7 @@ def plot_animated_trajectory(
         <p style="margin: 2px 0;">⚫ Точки с ошибкой &gt; 200 км</p>
     </div>
     """
-    m.get_root().html.add_child(folium.Element(legend_html))  # type: ignore[attr-defined]
+    m.get_root().html.add_child(folium.Element(legend_html))
 
     display(m)
 

@@ -18,7 +18,7 @@ uv run python cyclone_animation.py \
 Только показать на экране без сохранения:
 
 ```bash
-uv runpython cyclone_animation.py --cyclone-ids 2410 --horizons 24 --show
+uv run python cyclone_animation.py --cyclone-ids 2410 --horizons 24 --show
 ```
 """
 
